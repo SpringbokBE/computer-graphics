@@ -1,6 +1,6 @@
 from logging import getLogger
 
-from PyQt5.QtCore import QSettings, Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import QSettings, Qt, QTimer, pyqtSignal, pyqtSlot
 from PyQt5.QtWidgets import (QApplication, QCheckBox, QGridLayout, QSlider,
                              QSpinBox, QWidget)
 
@@ -181,6 +181,7 @@ class SliderGroup( QWidget ):
 
     ############################################################################
 
+    @pyqtSlot( bool )
     def _onCheckBoxToggled( self, isChecked ):
         """
         Enable or disable the slider/spinbox depending on the checkbox state.
@@ -195,6 +196,7 @@ class SliderGroup( QWidget ):
 
     ############################################################################
 
+    @pyqtSlot( int )
     def _onSliderValueChanged( self, value ):
         """
         Update the spinbox when the sliders value has changed.
@@ -210,6 +212,7 @@ class SliderGroup( QWidget ):
 
     ############################################################################
 
+    @pyqtSlot( int )
     def _onSpinBoxValueChanged( self, value ):
         """
         Update the slider when the spinbox' value has changed.
