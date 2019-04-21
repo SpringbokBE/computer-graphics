@@ -274,9 +274,9 @@ class BasicScene( QObject ):
         """
         self._colors = vtkNamedColors()
         self._colors.SetColor( "Head", (1.0000, 1.0000, 1.0000, 1.0000) )
-        self._colors.SetColor( "Grey matter", (1.0000, 0.6200, 0.0000, 0.8000) )
-        self._colors.SetColor( "Brain", (0.0300, 1.0000, 0.0000, 0.8000) )
-        self._colors.SetColor( "Lesion", (0.0000, 0.3100, 1.0000, 0.8000) )
+        self._colors.SetColor( "Grey matter", (1.0000, 0.6200, 0.0000, 1.0000) )
+        self._colors.SetColor( "Brain", (0.0300, 1.0000, 0.0000, 1.0000) )
+        self._colors.SetColor( "Lesion", (0.0000, 0.3100, 1.0000, 1.0000) )
         self._colors.SetColor( "Background", (0.1000, 0.1000, 0.2000, 1.0000) )
 
     ############################################################################
