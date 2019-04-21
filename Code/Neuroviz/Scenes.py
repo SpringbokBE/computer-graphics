@@ -71,13 +71,13 @@ class BasicScene( QObject ):
         self._createImageResliceActors()
         self._createRendererAndInteractor()
 
+        bounds = self.getBounds()
+        self._min, self._max = bounds[::2], bounds[1::2]
+
         if interactionStyle is None:
             interactionStyle = self._settings.value( f"{__class__.__name__}/InteractionStyle", "Opacity", type = str )
         self.setInteractionStyle( interactionStyle )
         self._settings.setValue( f"{__class__.__name__}/InteractionStyle", self._style )
-
-        bounds = self.getBounds()
-        self._min, self._max = bounds[::2], bounds[1::2]
 
     ############################################################################
 
@@ -578,22 +578,25 @@ class MouseInteractorToggleOpacity( vtkInteractorStyleTrackballCamera ):
         picker.Pick( *clickPosition[:2], 0, self._renderer )
         pickPosition = picker.GetPickPosition()
 
-        pickedActors = picker.GetActors()
-        pickedActors.InitTraversal()
+        pickedProp3Ds = picker.GetProp3Ds()
+        pickedProp3Ds.InitTraversal()
 
-        actor = pickedActors.GetNextActor()
-        if actor is None: return
+        pickedActors = set()
 
-        # Find the closest actor to the picked position.
-        closestActor = actor
-        closestDistance = vtkMath.Distance2BetweenPoints( pickPosition, actor.GetCenter() )
+        prop3D = pickedProp3Ds.GetNextProp3D()
+        while prop3D is not None:
+            actor = vtkActor.SafeDownCast( prop3D )
+            if actor: pickedActors.add( actor )
+            prop3D = pickedProp3Ds.GetNextProp3D()
 
-        while actor is not None:
-            actor = pickedActors.GetNextActor()
-            if actor in self._actors:
-                distance = vtkMath.Distance2BetweenPoints( pickPosition, actor.GetCenter() )
-                if distance < closestDistance:
-                    closestDistance, closestActor = distance, actor
+        closestActor, closestDistance = None, float( "inf" )
+
+        for actor in pickedActors:
+            distance = vtkMath.Distance2BetweenPoints( pickPosition, actor.GetCenter() )
+            if distance < closestDistance:
+                closestDistance, closestActor = distance, actor
+
+        if closestActor is None: return
 
         # Group pieces when slicing along a particular axis has been disabled.
         # ID's of the contour extraction actors  are labeled from 0 to 7.
