@@ -34,8 +34,8 @@ class BasicScene( QObject ):
         self._renderWindow = renderWindow
         self._settings = QApplication.instance().settings
 
-        self._observedObjectsAndTags = []
-        self._slices = [None, None, None]
+        self._observedObjectsAndTags = []   # To be able to change interaction style.
+        self._slices = [None, None, None]   # Contains the index of the x, y and z slices.
 
         self.initializeScene()
 
@@ -64,8 +64,8 @@ class BasicScene( QObject ):
 
         self._createNamedColors()
         self._createOutlineActor()
-        self._createContour()
-        self._createContourActor()              # InteractionStyle = Opacity
+        self._createContours()
+        self._createContourActors()             # InteractionStyle = Opacity
         self._createContourExtractionActors()   # InteractionStyle = Interactive
         self._createContourExtractionActor()    # InteractionStyle = Automatic
         self._createImageResliceActors()
@@ -73,19 +73,29 @@ class BasicScene( QObject ):
 
         if interactionStyle is None:
             interactionStyle = self._settings.value( f"{__class__.__name__}/InteractionStyle", "Opacity", type = str )
+
         self.setInteractionStyle( interactionStyle )
         self._settings.setValue( f"{__class__.__name__}/InteractionStyle", self._style )
 
     ############################################################################
 
-    def getBounds( self ):
+    def updateSlices( self, slices = [None, None, None]):
         """
-        Get the bounds of the scene.
+        Updates the (inter)actors that depend on the position of the slices.
         """
-        extent = self._reader.GetOutput().GetExtent()
-        spacing = self._reader.GetOutput().GetSpacing()
+        logger.debug( f"updateSlices( {slices} )" )
 
-        return [ extent[i] * spacing[i // 2] for i in range( 6 ) ]
+        self._slices = list( slices )
+
+        if self._style == "Interactive":
+            self._updateContourExtractionActors()
+            self._interactor.GetInteractorStyle().updateSlices( self._slices )
+        elif self._style == "Automatic":
+            self._updateContourExtractionActor( force = True )
+
+        self._updateImageResliceActors()
+
+        self._renderWindow.Render()
 
     ############################################################################
 
@@ -115,29 +125,29 @@ class BasicScene( QObject ):
         self._observedObjectsAndTags = []
 
         self._renderer.RemoveAllViewProps()
-        for actor in self._imageResliceActors:
-            self._renderer.AddActor( actor )
+        for actor in self._imageResliceActors: self._renderer.AddActor( actor )
         self._interactor.SetInteractorStyle( vtkInteractorStyleTrackballCamera() )
 
         if interactionStyle == "Opacity":
             self._style = "Opacity"
             self._renderer.AddActor( self._outlineActor )
-            self._renderer.AddActor( self._contourActor )
-            self._opacity = self._settings.value( f"{__class__.__name__}/Opacity", 0.4, type = float )
-            self.setOpacity( self._opacity )
+            for actor in self._contourActors:
+                self._renderer.AddActor( actor )
         elif interactionStyle == "Interactive":
             self._style = "Interactive"
             self._renderer.AddActor( self._outlineActor )
             for actor in self._contourExtractionActors:
                 self._renderer.AddActor( actor )
+            for actor in self._contourActors[1:]:
+                self._renderer.AddActor( actor )
             interactor = MouseInteractorToggleOpacity( self._renderer, self._contourExtractionActors, self._slices )
             self._interactor.SetInteractorStyle( interactor )
-            self._opacity = self._settings.value( f"{__class__.__name__}/Opacity", 0.4, type = float )
-            self.setOpacity( self._opacity )
         else:
             self._style = "Automatic"
             self._renderer.AddActor( self._outlineActor )
             self._renderer.AddActor( self._contourExtractionActor )
+            for actor in self._contourActors[1:]:
+                self._renderer.AddActor( actor )
             cam = self._renderer.GetActiveCamera()
             tag = cam.AddObserver( "ModifiedEvent", self._onCameraMoved )
             self._observedObjectsAndTags.append( (cam, tag) )
@@ -145,6 +155,11 @@ class BasicScene( QObject ):
 
         self._renderer.ResetCamera()
         self._renderWindow.Render()
+
+        self._activeContourName = self._settings.value( f"{__class__.__name__}/ActiveContour", "Brain", type = str )
+        self.setActiveContour( self._activeContourName )
+        self._opacity = self._settings.value( f"{__class__.__name__}/Opacity", 0.4, type = float )
+        self.setOpacity( self._opacity )
 
         # Bounds become initialized only after the actors have been added.
         bounds = self.getBounds()
@@ -159,22 +174,45 @@ class BasicScene( QObject ):
 
     ############################################################################
 
-    def updateSlices( self, slices = [None, None, None]):
+    def getBounds( self ):
         """
-        Updates the (inter)actors that depend on the position of the slices.
+        Get the bounds of the scene.
         """
-        logger.debug( f"updateSlices( {slices} )" )
+        extent = self._reader.GetOutput().GetExtent()
+        spacing = self._reader.GetOutput().GetSpacing()
 
-        self._slices = list( slices )
+        return [ extent[i] * spacing[i // 2] for i in range( 6 ) ]
 
-        if self._style == "Interactive":
-            self._updateContourExtractionActors()
-            self._interactor.GetInteractorStyle().updateSlices( self._slices )
-        elif self._style == "Automatic":
-            self._updateContourExtractionActor( force = True )
+    ############################################################################
 
-        self._updateImageResliceActors()
+    def getContourNames( self ):
+        """
+        Get the names of the contours, except the "Head" contour.
+        """
+        return self._contourNames[1:]
 
+    ############################################################################
+
+    def getActiveContourName( self ):
+        """
+        Get the name of the active contour.
+        """
+        return self._activeContourName
+
+    ############################################################################
+
+    def setActiveContour( self, contourName ):
+        """
+        Set the active contour based on its name. Name "None" will display
+        nothing but the "Head" contour.
+        """
+        for contour in self._contourActors[1:]: contour.SetVisibility( False )
+
+        if contourName != "None":
+            newContourIndex = self._contourNames.index( contourName )
+            self._contourActors[newContourIndex].SetVisibility( True )
+
+        self._activeContourName = contourName
         self._renderWindow.Render()
 
     ############################################################################
@@ -197,7 +235,7 @@ class BasicScene( QObject ):
         self._opacity = value
 
         if self._style == "Opacity":
-            self._contourActor.GetProperty().SetOpacity( self._opacity )
+            self._contourActors[0].GetProperty().SetOpacity( self._opacity )
         else:
             self._interactor.GetInteractorStyle().setOpacity( self._opacity )
 
@@ -235,7 +273,10 @@ class BasicScene( QObject ):
         Creates named colors for convenience.
         """
         self._colors = vtkNamedColors()
-        self._colors.SetColor( "Head", (1.0000, 0.3882, 0.2784, 1.0000) )
+        self._colors.SetColor( "Head", (1.0000, 1.0000, 1.0000, 1.0000) )
+        self._colors.SetColor( "Grey matter", (1.0000, 0.6200, 0.0000, 0.8000) )
+        self._colors.SetColor( "Brain", (0.0300, 1.0000, 0.0000, 0.8000) )
+        self._colors.SetColor( "Lesion", (0.0000, 0.3100, 1.0000, 0.8000) )
         self._colors.SetColor( "Background", (0.1000, 0.1000, 0.2000, 1.0000) )
 
     ############################################################################
@@ -255,30 +296,43 @@ class BasicScene( QObject ):
 
     ############################################################################
 
-    def _createContour( self ):
+    def _createContours( self ):
         """
-        Creates an isosurface (contour) from the volumetric data.
+        Creates an isosurfaces (contours) from the volumetric data.
         """
-        value = self._settings.value( f"{__class__.__name__}/ContourValue", 127, type = int )
+        contours = self._settings.value( f"{__class__.__name__}/Contours", "Head->127", type = list )
 
-        self._contour = vtkContourFilter()
-        self._contour.SetInputConnection( self._reader.GetOutputPort() )
-        self._contour.SetValue( 0, value )
+        # Handle the empty and one-element list of contours.
+        if not isinstance( contours , list ):
+            if not contours: return
+            contours = (contours,)
+
+        self._contourNames = [None for _ in range( len( contours ) )]
+
+        self._contours = [vtkContourFilter() for _ in range( len( contours ) )]
+        for i, contour in enumerate( self._contours ):
+            name, value = (x.strip() for x in contours[i].split( "->" ))
+            contour.SetInputConnection( self._reader.GetOutputPort() )
+            contour.SetValue( 0, int( value ) )
+            self._contourNames[i] = name
 
     ############################################################################
 
-    def _createContourActor( self ):
+    def _createContourActors( self ):
         """
-        Creates an actor from the isosurface (contour). Used in the "Opacity"
+        Creates actors from the isosurfaces (contours). Used in the "Opacity"
         interaction style.
         """
-        self._contourMapper = vtkPolyDataMapper()
-        self._contourMapper.SetInputConnection( self._contour.GetOutputPort() )
-        self._contourMapper.ScalarVisibilityOff()
+        self._contourMappers = [vtkPolyDataMapper() for _ in range( len( self._contours ) ) ]
+        for i, contourMapper in enumerate( self._contourMappers ):
+            contourMapper.SetInputConnection( self._contours[i].GetOutputPort() )
+            contourMapper.ScalarVisibilityOff()
 
-        self._contourActor = vtkActor()
-        self._contourActor.SetMapper( self._contourMapper )
-        self._contourActor.GetProperty().SetColor( self._colors.GetColor3d( "Head" ) )
+        self._contourActors = [vtkActor() for _ in range( len( self._contours ) ) ]
+        for i, contourActor in enumerate( self._contourActors ):
+            contourActor.SetMapper( self._contourMappers[i] )
+            contourActor.GetProperty().SetColor( self._colors.GetColor3d( self._contourNames[i] ) )
+            contourActor.GetProperty().SetOpacity( self._colors.GetColor4d( self._contourNames[i] )[-1] )
 
     ############################################################################
 
@@ -292,7 +346,7 @@ class BasicScene( QObject ):
 
         self._contourExtractions = [vtkExtractGeometry() for _ in range( 8 )]
         for i, contourExtraction in enumerate( self._contourExtractions ):
-            contourExtraction.SetInputConnection( self._contour.GetOutputPort() )
+            contourExtraction.SetInputConnection( self._contours[0].GetOutputPort() )
             contourExtraction.SetImplicitFunction( self._boxes[i] )
             contourExtraction.ExtractInsideOn()
             contourExtraction.ExtractBoundaryCellsOn()
@@ -318,7 +372,7 @@ class BasicScene( QObject ):
         self._box.SetBounds( 0, 0, 0, 0, 0, 0 )
 
         self._contourExtraction = vtkExtractGeometry()
-        self._contourExtraction.SetInputConnection( self._contour.GetOutputPort() )
+        self._contourExtraction.SetInputConnection( self._contours[0].GetOutputPort() )
         self._contourExtraction.SetImplicitFunction( self._box )
         self._contourExtraction.ExtractInsideOff()
         self._contourExtraction.ExtractBoundaryCellsOn()
