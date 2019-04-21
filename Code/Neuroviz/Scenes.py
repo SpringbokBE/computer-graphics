@@ -137,6 +137,7 @@ class BasicScene( QObject ):
             self._interactor.SetInteractorStyle( interactor )
             self._opacity = self._settings.value( f"{__class__.__name__}/Opacity", 0.4, type = float )
             self.setOpacity( self._opacity )
+            self._updateContourExtractionActors()
         else:
             self._style = "Automatic"
             self._renderer.AddActor( self._outlineActor )
@@ -145,6 +146,7 @@ class BasicScene( QObject ):
             tag = cam.AddObserver( "ModifiedEvent", self._onCameraMoved )
             self._observedObjectsAndTags.append( (cam, tag) )
             self._DOP = cam.GetDirectionOfProjection()
+            self._updateContourExtractionActor( force = True )
 
         self._renderer.ResetCamera()
         self._renderWindow.Render()
