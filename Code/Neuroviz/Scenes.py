@@ -71,9 +71,6 @@ class BasicScene( QObject ):
         self._createImageResliceActors()
         self._createRendererAndInteractor()
 
-        bounds = self.getBounds()
-        self._min, self._max = bounds[::2], bounds[1::2]
-
         if interactionStyle is None:
             interactionStyle = self._settings.value( f"{__class__.__name__}/InteractionStyle", "Opacity", type = str )
         self.setInteractionStyle( interactionStyle )
@@ -137,7 +134,6 @@ class BasicScene( QObject ):
             self._interactor.SetInteractorStyle( interactor )
             self._opacity = self._settings.value( f"{__class__.__name__}/Opacity", 0.4, type = float )
             self.setOpacity( self._opacity )
-            self._updateContourExtractionActors()
         else:
             self._style = "Automatic"
             self._renderer.AddActor( self._outlineActor )
@@ -146,9 +142,19 @@ class BasicScene( QObject ):
             tag = cam.AddObserver( "ModifiedEvent", self._onCameraMoved )
             self._observedObjectsAndTags.append( (cam, tag) )
             self._DOP = cam.GetDirectionOfProjection()
-            self._updateContourExtractionActor( force = True )
 
         self._renderer.ResetCamera()
+        self._renderWindow.Render()
+
+        # Bounds become initialized only after the actors have been added.
+        bounds = self.getBounds()
+        self._min, self._max = bounds[::2], bounds[1::2]
+
+        if self._style == "Interactive":
+            self._updateContourExtractionActors()
+        elif self._style == "Automatic":
+            self._updateContourExtractionActor( force = True )
+
         self._renderWindow.Render()
 
     ############################################################################
