@@ -1,6 +1,6 @@
 from logging import getLogger
 
-from PyQt5.QtCore import QObject, QTimer
+from PyQt5.QtCore import QObject, QTimer, pyqtSlot
 
 from Neuroviz.Interactors import BasicWidget
 from Neuroviz.Scenes import BasicScene
@@ -32,6 +32,10 @@ class BasicSceneAndInteractor( QObject ):
         self._interactor.sliderGroupSagittal.setRange( *sliderRanges[2:4] )
         self._interactor.sliderGroupTransverse.setRange( *sliderRanges[4:6] )
 
+        # Update the interaction style combobox to match the style from the settings.
+        index = self._interactor.comboBoxInteractionStyle.findText( self._scene.getInteractionStyle() )
+        self._interactor.comboBoxInteractionStyle.setCurrentIndex( index )
+
         # Update the image slices in the scene to match the slider groups.
         sliceValues = (self._interactor.sliderGroupCoronal.getValue(),
                        self._interactor.sliderGroupSagittal.getValue(),
@@ -40,6 +44,8 @@ class BasicSceneAndInteractor( QObject ):
         self._scene.updateSlices( sliceValues )
 
         # Connect all signals and their slots.
+        self._interactor.comboBoxInteractionStyle.activated.connect( self._onComboBoxInteractionStyleActivated )
+
         self._interactor.sliderGroupCoronal.valueChanged.connect( self._onSliderGroupChanged )
         self._interactor.sliderGroupSagittal.valueChanged.connect( self._onSliderGroupChanged )
         self._interactor.sliderGroupTransverse.valueChanged.connect( self._onSliderGroupChanged )
@@ -56,6 +62,19 @@ class BasicSceneAndInteractor( QObject ):
 
     ############################################################################
 
+    @pyqtSlot( int )
+    def _onComboBoxInteractionStyleActivated( self, index ):
+        """
+        When the interaction style combobox has been changed by the user.
+        """
+        logger.debug( f"_onComboBoxInteractionStyleActivated( {index} )" )
+
+        text = self._interactor.comboBoxInteractionStyle.itemText( index )
+        self._scene.setInteractionStyle( text )
+
+    ############################################################################
+
+    @pyqtSlot( int )
     def _onSliderGroupChanged( self, _ ):
         """
         When any of the slider groups has changed.
@@ -69,6 +88,7 @@ class BasicSceneAndInteractor( QObject ):
 
     ############################################################################
 
+    @pyqtSlot( bool )
     def _onSliderGroupToggled( self, _ ):
         """
         When any of the slider groups has been toggled.
@@ -84,6 +104,7 @@ class BasicSceneAndInteractor( QObject ):
 
     ############################################################################
 
+    @pyqtSlot()
     def _onSliderGroupTimeout( self ):
         """
         Update the slices in the scene.
