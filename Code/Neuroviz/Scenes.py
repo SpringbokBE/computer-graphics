@@ -8,10 +8,11 @@ from PyQt5.QtWidgets import QApplication
 from vtk import (vtkActor, vtkBox, vtkCamera, vtkContourFilter,
                  vtkDataSetMapper, vtkExtractGeometry,
                  vtkGenericDataObjectReader, vtkImageActor,
-                 vtkImageMapToColors, vtkImageReslice,
+                 vtkImageGaussianSmooth, vtkImageMapToColors, vtkImageReslice,
                  vtkInteractorStyleTrackballCamera, vtkLookupTable, vtkMath,
                  vtkMatrix4x4, vtkNamedColors, vtkOutlineFilter, vtkPlane,
-                 vtkPointPicker, vtkPolyDataMapper, vtkRenderer)
+                 vtkPointPicker, vtkPolyDataMapper, vtkPolyDataNormals,
+                 vtkRenderer, vtkStripper, vtkWindowedSincPolyDataFilter)
 
 logger = getLogger( __name__ )
 
@@ -64,7 +65,7 @@ class BasicScene( QObject ):
 
         self._createNamedColors()
         self._createOutlineActor()
-        self._createContours()
+        self._readContourValuesAndSmoothings()
         self._createContourActors()             # InteractionStyle = Opacity
         self._createContourExtractionActors()   # InteractionStyle = Interactive
         self._createContourExtractionActor()    # InteractionStyle = Automatic
@@ -296,25 +297,40 @@ class BasicScene( QObject ):
 
     ############################################################################
 
-    def _createContours( self ):
+    def _readContourValuesAndSmoothings( self ):
         """
-        Creates an isosurfaces (contours) from the volumetric data.
+        Read the contour values (name, value) and smoothings (name, values) from
+        the settings.
         """
-        contours = self._settings.value( f"{__class__.__name__}/Contours", "Head->127", type = list )
+        self._contourNames = []
+        namesAndValues = self._settings.value( f"{__class__.__name__}/ContourValues", "Head->127", type = list )
+        namesAndSmoothings = self._settings.value( f"{__class__.__name__}/ContourSmoothings", "Head->2/1.0/100/0.05/45.0", type = list )
 
-        # Handle the empty and one-element list of contours.
-        if not isinstance( contours , list ):
-            if not contours: return
-            contours = (contours,)
+        # Handle the empty and one-element list cases.
+        if not isinstance( namesAndValues , list ):
+            if not namesAndValues: return
+            namesAndValues = (namesAndValues,)
 
-        self._contourNames = [None for _ in range( len( contours ) )]
+        if not isinstance( namesAndSmoothings, list ):
+            if not namesAndSmoothings: return
+            namesAndSmoothings = (namesAndSmoothings, )
 
-        self._contours = [vtkContourFilter() for _ in range( len( contours ) )]
-        for i, contour in enumerate( self._contours ):
-            name, value = (x.strip() for x in contours[i].split( "->" ))
-            contour.SetInputConnection( self._reader.GetOutputPort() )
-            contour.SetValue( 0, int( value ) )
-            self._contourNames[i] = name
+        # Create the dictionary that maps the contour value to the name of the contour.
+        self._contourValues = {}
+        for nameAndValue in namesAndValues:
+            name, value = (x.strip() for x in nameAndValue.split( "->" ))
+            self._contourValues[ name ] = int( value )
+            self._contourNames.append( name )
+
+        # Create the dictionary that maps the smoothing values to the name of the contour.
+        self._contourSmoothings = {}
+        for nameAndSmoothing in namesAndSmoothings:
+            name, smoothing = (x.strip() for x in nameAndSmoothing.split( "->" ))
+            s = smoothing.split( "/" )
+            smoothing = tuple( (int( s[0] ), float( s[1] ), int( s[2] ), float( s[3] ), float( s[4] )) )
+            self._contourSmoothings[ name ] = smoothing
+
+        self._nContours = len( self._contourNames )
 
     ############################################################################
 
@@ -323,6 +339,52 @@ class BasicScene( QObject ):
         Creates actors from the isosurfaces (contours). Used in the "Opacity"
         interaction style.
         """
+        self._contourSmoothers  = [None for _ in range( self._nContours )]
+        self._contourTemps      = [None for _ in range( self._nContours )]
+        self._contourFilters    = [None for _ in range( self._nContours )]
+        self._contourNormals    = [None for _ in range( self._nContours )]
+        self._contours          = [None for _ in range( self._nContours )]
+
+        for i, (name, value) in enumerate( self._contourValues.items() ):
+            if name in self._contourSmoothings:
+                radius, stdDev, iters, passBand, angle = self._contourSmoothings[ name ]
+                self._contourTemps[i] = vtkContourFilter()
+                if radius != 0 and stdDev != 0:
+                    self._contourSmoothers[i] = vtkImageGaussianSmooth()
+                    self._contourSmoothers[i].SetStandardDeviations( stdDev, stdDev, stdDev )
+                    self._contourSmoothers[i].SetRadiusFactors( radius, radius, radius )
+                    self._contourSmoothers[i].SetInputConnection( self._reader.GetOutputPort() )
+                    self._contourTemps[i].SetInputConnection( self._contourSmoothers[i].GetOutputPort() )
+                else:
+                    self._contourTemps[i].SetInputConnection( self._reader.GetOutputPort() )
+
+                self._contourTemps[i].SetValue( 0, value )
+                self._contourTemps[i].ComputeScalarsOff()
+                self._contourTemps[i].ComputeGradientsOff()
+                self._contourTemps[i].ComputeNormalsOff()
+
+                self._contourFilters[i] = vtkWindowedSincPolyDataFilter()
+                self._contourFilters[i].SetInputConnection( self._contourTemps[i].GetOutputPort() )
+                self._contourFilters[i].SetNumberOfIterations( iters )
+                self._contourFilters[i].BoundarySmoothingOff()
+                self._contourFilters[i].FeatureEdgeSmoothingOff()
+                self._contourFilters[i].SetFeatureAngle( angle )
+                self._contourFilters[i].SetPassBand( passBand )
+                self._contourFilters[i].NonManifoldSmoothingOn()
+                self._contourFilters[i].NormalizeCoordinatesOn()
+                self._contourFilters[i].Update()
+
+                self._contourNormals[i] = vtkPolyDataNormals()
+                self._contourNormals[i].SetInputConnection( self._contourFilters[i].GetOutputPort() )
+                self._contourNormals[i].SetFeatureAngle( angle )
+
+                self._contours[i] = vtkStripper()
+                self._contours[i].SetInputConnection( self._contourNormals[i].GetOutputPort() )
+            else:
+                self._contours[i] = vtkContourFilter()
+                self._contours[i].SetInputConnection( self._reader.GetOutputPort() )
+                self._contours[i].SetValue( 0, value )
+
         self._contourMappers = [vtkPolyDataMapper() for _ in range( len( self._contours ) ) ]
         for i, contourMapper in enumerate( self._contourMappers ):
             contourMapper.SetInputConnection( self._contours[i].GetOutputPort() )
@@ -344,16 +406,51 @@ class BasicScene( QObject ):
         self._boxes = [vtkBox() for _ in range( 8 )]
         for box in self._boxes: box.SetBounds( 0, 0, 0, 0, 0, 0 )
 
+        self._contourExtractionTemps = vtkContourFilter()
+        self._contourExtractionTemps.SetInputConnection( self._reader.GetOutputPort() )
+        self._contourExtractionTemps.SetValue( 0 , self._contourValues[ self._contourNames[0] ] )
+        self._contourExtractionTemps.ComputeScalarsOff()
+        self._contourExtractionTemps.ComputeGradientsOff()
+        self._contourExtractionTemps.ComputeNormalsOff()
+
         self._contourExtractions = [vtkExtractGeometry() for _ in range( 8 )]
         for i, contourExtraction in enumerate( self._contourExtractions ):
-            contourExtraction.SetInputConnection( self._contours[0].GetOutputPort() )
+            contourExtraction.SetInputConnection( self._contourExtractionTemps.GetOutputPort() )
             contourExtraction.SetImplicitFunction( self._boxes[i] )
             contourExtraction.ExtractInsideOn()
             contourExtraction.ExtractBoundaryCellsOn()
 
+        if self._contourNames[0] in self._contourSmoothings:
+            radius, stdDev, iters, passBand, angle = self._contourSmoothings[ self._contourNames[0] ]
+
+        self._contourExtractionFilters   = [None for _ in range( 8 )]
+        self._contourExtractionNormals   = [None for _ in range( 8 )]
+        self._contourExtractionStrippers = [None for _ in range( 8 )]
+
+        for i, contourExtraction in enumerate( self._contourExtractions ):
+            self._contourExtractionFilters[i] = vtkWindowedSincPolyDataFilter()
+            self._contourExtractionFilters[i].SetInputConnection( self._contourExtractions[i].GetOutputPort() )
+            self._contourExtractionFilters[i].SetNumberOfIterations( iters )
+            self._contourExtractionFilters[i].BoundarySmoothingOff()
+            self._contourExtractionFilters[i].FeatureEdgeSmoothingOff()
+            self._contourExtractionFilters[i].SetFeatureAngle( angle )
+            self._contourExtractionFilters[i].SetPassBand( passBand )
+            self._contourExtractionFilters[i].NonManifoldSmoothingOn()
+            self._contourExtractionFilters[i].NormalizeCoordinatesOn()
+            self._contourExtractionFilters[i].Update()
+
+            self._contourExtractionNormals[i] = vtkPolyDataNormals()
+            self._contourExtractionNormals[i].SetInputConnection( self._contourExtractionFilters[i].GetOutputPort() )
+            self._contourExtractionNormals[i].SetFeatureAngle( angle )
+
+            self._contourExtractionStrippers[i] = vtkStripper()
+            self._contourExtractionStrippers[i].SetInputConnection( self._contourExtractionNormals[i].GetOutputPort() )
+        else:
+            self._contourExtractionStrippers[i] = self._contourExtractions[i]
+
         self._contourExtractionMappers = [vtkDataSetMapper() for _ in range( 8 )]
         for i, contourExtractionMapper in enumerate( self._contourExtractionMappers ):
-            contourExtractionMapper.SetInputConnection( self._contourExtractions[i].GetOutputPort() )
+            contourExtractionMapper.SetInputConnection( self._contourExtractionStrippers[i].GetOutputPort() )
             contourExtractionMapper.ScalarVisibilityOff()
 
         self._contourExtractionActors = [vtkActor() for _ in range( 8 )]
