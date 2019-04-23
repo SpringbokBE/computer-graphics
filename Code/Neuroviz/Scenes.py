@@ -151,6 +151,7 @@ class BasicScene( QObject ):
             self._style = "Automatic"
             self._renderer.AddActor( self._outlineActor )
             for actor in self._octantActors:
+                actor.GetProperty().SetOpacity( 1 )
                 self._renderer.AddActor( actor )
             for actor in self._contourActors[1:]:
                 self._renderer.AddActor( actor )
@@ -158,11 +159,6 @@ class BasicScene( QObject ):
             tag = cam.AddObserver( "ModifiedEvent", self._onCameraMoved )
             self._observedObjectsAndTags.append( (cam, tag) )
             self._DOP = cam.GetDirectionOfProjection()
-
-        from vtk import vtkAxesActor
-        self._axes = vtkAxesActor()
-        self._axes.SetTotalLength( 100, 100, 100 )
-        self._renderer.AddActor( self._axes )
 
         self._renderer.ResetCamera()
         self._renderWindow.Render()
@@ -251,6 +247,7 @@ class BasicScene( QObject ):
         else:
             self._interactor.GetInteractorStyle().setOpacity( self._opacity )
 
+        self._renderWindow.Render()
         self._settings.setValue( f"{__class__.__name__}/Opacity", self._opacity )
 
     ############################################################################
