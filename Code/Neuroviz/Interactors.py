@@ -1,7 +1,9 @@
 from logging import getLogger
 
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (QApplication, QComboBox, QGroupBox, QLabel,
-                             QSizePolicy, QSpacerItem, QVBoxLayout, QWidget)
+                             QSizePolicy, QSlider, QSpacerItem, QVBoxLayout,
+                             QWidget)
 
 from Neuroviz.UiComponents import SliderGroup
 
@@ -46,6 +48,12 @@ class BasicWidget( QWidget ):
 
         self.comboBoxActiveContour = QComboBox( self )
 
+        self._labelOpacity = QLabel( "Opacity", self )
+
+        self.sliderOpacity = QSlider( Qt.Horizontal, self )
+        self.sliderOpacity.setMinimum( 0 )
+        self.sliderOpacity.setMaximum( 99 )
+
         self.sliderGroupCoronal = SliderGroup( "CoronalCut", self )
         self.sliderGroupCoronal.setText( "Coronal cut" )
         self.sliderGroupSagittal = SliderGroup( "SagittalCut", self )
@@ -70,6 +78,8 @@ class BasicWidget( QWidget ):
         verticalLayout.addWidget( self.comboBoxInteractionStyle )
         verticalLayout.addWidget( self._labelActiveContour )
         verticalLayout.addWidget( self.comboBoxActiveContour )
+        verticalLayout.addWidget( self._labelOpacity )
+        verticalLayout.addWidget( self.sliderOpacity )
         verticalLayout.addWidget( self._groupBoxSliders )
         verticalLayout.addItem( self._spacerItem )
         self.setLayout( verticalLayout )
