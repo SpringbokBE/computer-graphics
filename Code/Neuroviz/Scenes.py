@@ -6,7 +6,7 @@ from PyQt5.QtCore import QObject
 from PyQt5.QtWidgets import QApplication
 
 from vtk import (vtkActor, vtkBox, vtkCamera, vtkContourFilter,
-                 vtkDataSetMapper, vtkExtractGeometry,
+                 vtkDataSetMapper, vtkExtractPolyDataGeometry,
                  vtkGenericDataObjectReader, vtkImageActor,
                  vtkImageGaussianSmooth, vtkImageMapToColors, vtkImageReslice,
                  vtkInteractorStyleTrackballCamera, vtkLookupTable, vtkMath,
@@ -65,10 +65,13 @@ class BasicScene( QObject ):
 
         self._createNamedColors()
         self._createOutlineActor()
-        self._readContourValuesAndSmoothings()
-        self._createContourActors()             # InteractionStyle = Opacity
-        self._createContourExtractionActors()   # InteractionStyle = Interactive
-        self._createContourExtractionActor()    # InteractionStyle = Automatic
+
+        self._readContourInfo()
+        self._createContours()
+        self._createContourActors()
+        self._createOctants()
+        self._createOctantActors()
+
         self._createImageResliceActors()
         self._createRendererAndInteractor()
 
@@ -89,10 +92,10 @@ class BasicScene( QObject ):
         self._slices = list( slices )
 
         if self._style == "Interactive":
-            self._updateContourExtractionActors()
+            self._updateOctantActors()
             self._interactor.GetInteractorStyle().updateSlices( self._slices )
         elif self._style == "Automatic":
-            self._updateContourExtractionActor( force = True )
+            self._updateOctantActors()
 
         self._updateImageResliceActors()
 
@@ -137,22 +140,29 @@ class BasicScene( QObject ):
         elif interactionStyle == "Interactive":
             self._style = "Interactive"
             self._renderer.AddActor( self._outlineActor )
-            for actor in self._contourExtractionActors:
+            for actor in self._octantActors:
+                actor.SetVisibility( True )
                 self._renderer.AddActor( actor )
             for actor in self._contourActors[1:]:
                 self._renderer.AddActor( actor )
-            interactor = MouseInteractorToggleOpacity( self._renderer, self._contourExtractionActors, self._slices )
+            interactor = MouseInteractorToggleOpacity( self._renderer, self._octantActors, self._slices )
             self._interactor.SetInteractorStyle( interactor )
         else:
             self._style = "Automatic"
             self._renderer.AddActor( self._outlineActor )
-            self._renderer.AddActor( self._contourExtractionActor )
+            for actor in self._octantActors:
+                self._renderer.AddActor( actor )
             for actor in self._contourActors[1:]:
                 self._renderer.AddActor( actor )
             cam = self._renderer.GetActiveCamera()
             tag = cam.AddObserver( "ModifiedEvent", self._onCameraMoved )
             self._observedObjectsAndTags.append( (cam, tag) )
             self._DOP = cam.GetDirectionOfProjection()
+
+        from vtk import vtkAxesActor
+        self._axes = vtkAxesActor()
+        self._axes.SetTotalLength( 100, 100, 100 )
+        self._renderer.AddActor( self._axes )
 
         self._renderer.ResetCamera()
         self._renderWindow.Render()
@@ -167,9 +177,9 @@ class BasicScene( QObject ):
         self._min, self._max = bounds[::2], bounds[1::2]
 
         if self._style == "Interactive":
-            self._updateContourExtractionActors()
+            self._updateOctantActors()
         elif self._style == "Automatic":
-            self._updateContourExtractionActor( force = True )
+            self._updateOctantActors()
 
         self._renderWindow.Render()
 
@@ -223,7 +233,8 @@ class BasicScene( QObject ):
         Get the opacity value that is used in the current interaction style.
         """
         if self._style == "Automatic": return 1
-        else: return self._opacity
+
+        return self._opacity
 
     ############################################################################
 
@@ -246,14 +257,12 @@ class BasicScene( QObject ):
 
     def resetOpacity( self ):
         """
-        Reset the opacity such that all actors are opaque.
+        Reset the opacity of the first contour actor.
         """
         if self._style == "Opacity":
-            self._contourActor.GetProperty().SetOpacity( 1 )
-        if self._style == "Automatic":
-            self._contourExtractionActor.GetProperty().SetOpacity( 1 )
+            self._contourActors[0].GetProperty().SetOpacity( 1 )
         else:
-            for actor in self._contourExtractionActors:
+            for actor in self._octantActors:
                 actor.GetProperty().SetOpacity( 1 )
 
     ############################################################################
@@ -297,7 +306,7 @@ class BasicScene( QObject ):
 
     ############################################################################
 
-    def _readContourValuesAndSmoothings( self ):
+    def _readContourInfo( self ):
         """
         Read the contour values (name, value) and smoothings (name, values) from
         the settings.
@@ -319,7 +328,7 @@ class BasicScene( QObject ):
         self._contourValues = {}
         for nameAndValue in namesAndValues:
             name, value = (x.strip() for x in nameAndValue.split( "->" ))
-            self._contourValues[ name ] = int( value )
+            self._contourValues[name] = int( value )
             self._contourNames.append( name )
 
         # Create the dictionary that maps the smoothing values to the name of the contour.
@@ -328,69 +337,82 @@ class BasicScene( QObject ):
             name, smoothing = (x.strip() for x in nameAndSmoothing.split( "->" ))
             s = smoothing.split( "/" )
             smoothing = tuple( (int( s[0] ), float( s[1] ), int( s[2] ), float( s[3] ), float( s[4] )) )
-            self._contourSmoothings[ name ] = smoothing
+            self._contourSmoothings[name] = smoothing
 
         self._nContours = len( self._contourNames )
 
     ############################################################################
 
-    def _createContourActors( self ):
+    def _createContours( self ):
         """
-        Creates actors from the isosurfaces (contours). Used in the "Opacity"
-        interaction style.
+        Create the smoothed contours (isosurfaces). Smoothing is done on the
+        input data using a Gaussian filter, and on the isosurfaces thenselves
+        using a windowed sinc filter.
         """
-        self._contourSmoothers  = [None for _ in range( self._nContours )]
-        self._contourTemps      = [None for _ in range( self._nContours )]
-        self._contourFilters    = [None for _ in range( self._nContours )]
-        self._contourNormals    = [None for _ in range( self._nContours )]
-        self._contours          = [None for _ in range( self._nContours )]
+        self._gaussians    = [None for _ in range( self._nContours )]
+        self._tempContours = [None for _ in range( self._nContours )]
+        self._filters      = [None for _ in range( self._nContours )]
+        self._normals      = [None for _ in range( self._nContours )]
+        self._contours     = [None for _ in range( self._nContours )]
 
         for i, (name, value) in enumerate( self._contourValues.items() ):
             if name in self._contourSmoothings:
-                radius, stdDev, iters, passBand, angle = self._contourSmoothings[ name ]
-                self._contourTemps[i] = vtkContourFilter()
+                self._tempContours[i] = vtkContourFilter()
+
+                radius, stdDev, iters, passBand, angle = self._contourSmoothings[name]
+
                 if radius != 0 and stdDev != 0:
-                    self._contourSmoothers[i] = vtkImageGaussianSmooth()
-                    self._contourSmoothers[i].SetStandardDeviations( stdDev, stdDev, stdDev )
-                    self._contourSmoothers[i].SetRadiusFactors( radius, radius, radius )
-                    self._contourSmoothers[i].SetInputConnection( self._reader.GetOutputPort() )
-                    self._contourTemps[i].SetInputConnection( self._contourSmoothers[i].GetOutputPort() )
+                    self._gaussians[i] = vtkImageGaussianSmooth()
+                    self._gaussians[i].SetInputConnection( self._reader.GetOutputPort() )
+                    self._gaussians[i].SetRadiusFactors( radius, radius, radius )
+                    self._gaussians[i].SetStandardDeviations( stdDev, stdDev, stdDev )
+                    self._tempContours[i].SetInputConnection( self._gaussians[i].GetOutputPort() )
                 else:
-                    self._contourTemps[i].SetInputConnection( self._reader.GetOutputPort() )
+                    self._tempContours[i].SetInputConnection( self._reader.GetOutputPort() )
 
-                self._contourTemps[i].SetValue( 0, value )
-                self._contourTemps[i].ComputeScalarsOff()
-                self._contourTemps[i].ComputeGradientsOff()
-                self._contourTemps[i].ComputeNormalsOff()
+                self._tempContours[i].SetValue( 0, value )
+                self._tempContours[i].ComputeScalarsOff()
+                self._tempContours[i].ComputeGradientsOff()
+                self._tempContours[i].ComputeNormalsOff()
 
-                self._contourFilters[i] = vtkWindowedSincPolyDataFilter()
-                self._contourFilters[i].SetInputConnection( self._contourTemps[i].GetOutputPort() )
-                self._contourFilters[i].SetNumberOfIterations( iters )
-                self._contourFilters[i].BoundarySmoothingOff()
-                self._contourFilters[i].FeatureEdgeSmoothingOff()
-                self._contourFilters[i].SetFeatureAngle( angle )
-                self._contourFilters[i].SetPassBand( passBand )
-                self._contourFilters[i].NonManifoldSmoothingOn()
-                self._contourFilters[i].NormalizeCoordinatesOn()
-                self._contourFilters[i].Update()
+                self._filters[i] = vtkWindowedSincPolyDataFilter()
+                self._filters[i].SetInputConnection( self._tempContours[i].GetOutputPort() )
+                self._filters[i].SetNumberOfIterations( iters )
+                self._filters[i].BoundarySmoothingOff()
+                self._filters[i].FeatureEdgeSmoothingOff()
+                self._filters[i].SetFeatureAngle( angle )
+                self._filters[i].SetPassBand( passBand )
+                self._filters[i].NonManifoldSmoothingOn()
+                self._filters[i].NormalizeCoordinatesOn()
+                self._filters[i].Update()
 
-                self._contourNormals[i] = vtkPolyDataNormals()
-                self._contourNormals[i].SetInputConnection( self._contourFilters[i].GetOutputPort() )
-                self._contourNormals[i].SetFeatureAngle( angle )
+                self._normals[i] = vtkPolyDataNormals()
+                self._normals[i].SetInputConnection( self._filters[i].GetOutputPort() )
+                self._normals[i].SetFeatureAngle( angle )
 
                 self._contours[i] = vtkStripper()
-                self._contours[i].SetInputConnection( self._contourNormals[i].GetOutputPort() )
+                self._contours[i].SetInputConnection( self._normals[i].GetOutputPort() )
             else:
                 self._contours[i] = vtkContourFilter()
                 self._contours[i].SetInputConnection( self._reader.GetOutputPort() )
-                self._contours[i].SetValue( 0, value )
+                self._contours[i].SetValue( 0 , value )
+                self._contours[i].ComputeScalarsOff()
+                self._contours[i].ComputeGradientsOff()
+                self._contours[i].ComputeNormalsOff()
 
-        self._contourMappers = [vtkPolyDataMapper() for _ in range( len( self._contours ) ) ]
+    ############################################################################
+
+    def _createContourActors( self ):
+        """
+        Creates actors from the smoothed isosurfaces (contours). Used in all
+        interaction styles.
+        """
+        self._contourMappers = [vtkPolyDataMapper() for _ in range( self._nContours ) ]
         for i, contourMapper in enumerate( self._contourMappers ):
             contourMapper.SetInputConnection( self._contours[i].GetOutputPort() )
             contourMapper.ScalarVisibilityOff()
 
-        self._contourActors = [vtkActor() for _ in range( len( self._contours ) ) ]
+        self._contourActors = [vtkActor() for _ in range( self._nContours ) ]
         for i, contourActor in enumerate( self._contourActors ):
             contourActor.SetMapper( self._contourMappers[i] )
             contourActor.GetProperty().SetColor( self._colors.GetColor3d( self._contourNames[i] ) )
@@ -398,89 +420,68 @@ class BasicScene( QObject ):
 
     ############################################################################
 
-    def _createContourExtractionActors( self ):
+    def _createOctants( self ):
         """
-        Splits up the original contour into 8 pieces. Used in the "Interactive"
-        interaction style.
         """
+        name = self._contourNames[0]
+
         self._boxes = [vtkBox() for _ in range( 8 )]
         for box in self._boxes: box.SetBounds( 0, 0, 0, 0, 0, 0 )
 
-        self._contourExtractionTemps = vtkContourFilter()
-        self._contourExtractionTemps.SetInputConnection( self._reader.GetOutputPort() )
-        self._contourExtractionTemps.SetValue( 0 , self._contourValues[ self._contourNames[0] ] )
-        self._contourExtractionTemps.ComputeScalarsOff()
-        self._contourExtractionTemps.ComputeGradientsOff()
-        self._contourExtractionTemps.ComputeNormalsOff()
+        self._contour = vtkContourFilter()
+        self._contour.SetInputConnection( self._reader.GetOutputPort() )
+        self._contour.SetValue( 0 , self._contourValues[name] )
+        self._contour.ComputeScalarsOff()
+        self._contour.ComputeGradientsOff()
+        self._contour.ComputeNormalsOff()
 
-        self._contourExtractions = [vtkExtractGeometry() for _ in range( 8 )]
-        for i, contourExtraction in enumerate( self._contourExtractions ):
-            contourExtraction.SetInputConnection( self._contourExtractionTemps.GetOutputPort() )
-            contourExtraction.SetImplicitFunction( self._boxes[i] )
-            contourExtraction.ExtractInsideOn()
-            contourExtraction.ExtractBoundaryCellsOn()
+        self._extractions = [vtkExtractPolyDataGeometry() for _ in range( 8 )]
+        for i, extraction in enumerate( self._extractions ):
+            extraction.SetInputConnection( self._contour.GetOutputPort() )
+            extraction.SetImplicitFunction( self._boxes[i] )
+            extraction.ExtractInsideOn()
+            extraction.ExtractBoundaryCellsOn()
 
-        if self._contourNames[0] in self._contourSmoothings:
-            radius, stdDev, iters, passBand, angle = self._contourSmoothings[ self._contourNames[0] ]
+        if name in self._contourSmoothings:
+            radius, stdDev, iters, passBand, angle = self._contourSmoothings[name]
 
-        self._contourExtractionFilters   = [None for _ in range( 8 )]
-        self._contourExtractionNormals   = [None for _ in range( 8 )]
-        self._contourExtractionStrippers = [None for _ in range( 8 )]
+            self._extractionFilters = [vtkWindowedSincPolyDataFilter() for _ in range( 8 )]
+            for i, extractionFilter in enumerate( self._extractionFilters ):
+                extractionFilter.SetInputConnection( self._extractions[i].GetOutputPort() )
+                extractionFilter.SetNumberOfIterations( iters )
+                extractionFilter.BoundarySmoothingOff()
+                extractionFilter.FeatureEdgeSmoothingOff()
+                extractionFilter.SetFeatureAngle( angle )
+                extractionFilter.SetPassBand( passBand )
+                extractionFilter.NonManifoldSmoothingOn()
+                extractionFilter.NormalizeCoordinatesOn()
+                extractionFilter.Update()
 
-        for i, contourExtraction in enumerate( self._contourExtractions ):
-            self._contourExtractionFilters[i] = vtkWindowedSincPolyDataFilter()
-            self._contourExtractionFilters[i].SetInputConnection( self._contourExtractions[i].GetOutputPort() )
-            self._contourExtractionFilters[i].SetNumberOfIterations( iters )
-            self._contourExtractionFilters[i].BoundarySmoothingOff()
-            self._contourExtractionFilters[i].FeatureEdgeSmoothingOff()
-            self._contourExtractionFilters[i].SetFeatureAngle( angle )
-            self._contourExtractionFilters[i].SetPassBand( passBand )
-            self._contourExtractionFilters[i].NonManifoldSmoothingOn()
-            self._contourExtractionFilters[i].NormalizeCoordinatesOn()
-            self._contourExtractionFilters[i].Update()
+            self._extractionNormals = [vtkPolyDataNormals() for _ in range( 8 )]
+            for i, extractionNormal in enumerate( self._extractionNormals ):
+                extractionNormal.SetInputConnection( self._extractionFilters[i].GetOutputPort() )
+                extractionNormal.SetFeatureAngle( angle )
 
-            self._contourExtractionNormals[i] = vtkPolyDataNormals()
-            self._contourExtractionNormals[i].SetInputConnection( self._contourExtractionFilters[i].GetOutputPort() )
-            self._contourExtractionNormals[i].SetFeatureAngle( angle )
-
-            self._contourExtractionStrippers[i] = vtkStripper()
-            self._contourExtractionStrippers[i].SetInputConnection( self._contourExtractionNormals[i].GetOutputPort() )
+            self._octants = [vtkStripper() for _ in range( 8 )]
+            for i, octant in enumerate( self._octants ):
+                octant.SetInputConnection( self._extractionNormals[i].GetOutputPort() )
         else:
-            self._contourExtractionStrippers[i] = self._contourExtractions[i]
-
-        self._contourExtractionMappers = [vtkDataSetMapper() for _ in range( 8 )]
-        for i, contourExtractionMapper in enumerate( self._contourExtractionMappers ):
-            contourExtractionMapper.SetInputConnection( self._contourExtractionStrippers[i].GetOutputPort() )
-            contourExtractionMapper.ScalarVisibilityOff()
-
-        self._contourExtractionActors = [vtkActor() for _ in range( 8 )]
-        for i, contourExtractionActor in enumerate( self._contourExtractionActors ):
-            contourExtractionActor.SetMapper( self._contourExtractionMappers[i] )
-            contourExtractionActor.GetProperty().SetColor( self._colors.GetColor3d( "Head" ) )
+            self._octants = self._extractions
 
     ############################################################################
 
-    def _createContourExtractionActor( self ):
+    def _createOctantActors( self ):
         """
-        Creates an actor that removes a cubic part of the contour. Initially,
-        the whole contour is shown. Used in the "Automatic" interaction style.
         """
-        self._box = vtkBox()
-        self._box.SetBounds( 0, 0, 0, 0, 0, 0 )
+        self._octantMappers = [vtkPolyDataMapper() for _ in range( 8 )]
+        for i, octantMapper in enumerate( self._octantMappers ):
+            octantMapper.SetInputConnection( self._octants[i].GetOutputPort() )
+            octantMapper.ScalarVisibilityOff()
 
-        self._contourExtraction = vtkExtractGeometry()
-        self._contourExtraction.SetInputConnection( self._contours[0].GetOutputPort() )
-        self._contourExtraction.SetImplicitFunction( self._box )
-        self._contourExtraction.ExtractInsideOff()
-        self._contourExtraction.ExtractBoundaryCellsOn()
-
-        self._contourExtractionMapper = vtkDataSetMapper()
-        self._contourExtractionMapper.SetInputConnection( self._contourExtraction.GetOutputPort() )
-        self._contourExtractionMapper.ScalarVisibilityOff()
-
-        self._contourExtractionActor = vtkActor()
-        self._contourExtractionActor.SetMapper( self._contourExtractionMapper )
-        self._contourExtractionActor.GetProperty().SetColor( self._colors.GetColor3d( "Head" ) )
+        self._octantActors = [vtkActor() for _ in range( 8 )]
+        for i, octantActor in enumerate( self._octantActors ):
+            octantActor.SetMapper( self._octantMappers[i] )
+            octantActor.GetProperty().SetColor( self._colors.GetColor3d( "Head" ) )
 
     ############################################################################
 
@@ -563,17 +564,15 @@ class BasicScene( QObject ):
 
     ############################################################################
 
-    def _updateContourExtractionActors( self ):
+    def _updateOctantActors( self ):
         """
-        Update the contour extraction actors such that the actors split up the
-        original contour into 8 pieces, depending on the location of the current
-        image plane(s). Used in the "Interactive" interaction style.
+        Update the octant actors so they match the current slice positions.
         """
         slices = [None for _ in range( 3 )]
 
         # If slicing along an axis is disabled, cut the contour right in the
-        # middle. This will make sure all 8 actors are used instead of removing
-        # some. The handling of 1/2/4/8 as one will be done in the
+        # middle. This will make sure all octants are used instead of removing
+        # some. The handling of the octants as one will be done in the
         # MouseInteractorToggleOpacity class.
         for i, slice in enumerate( self._slices ):
             if slice is None: slices[i] = (self._min[i] + self._max[i]) // 2
@@ -588,46 +587,53 @@ class BasicScene( QObject ):
                 for k, zRange in enumerate( zRanges ):
                     self._boxes[4 * i + 2 * j + k].SetBounds( *xRange, *yRange, *zRange )
 
+        if self._style == "Automatic":
+            self._updateOctantActorsVisibility( force = True )
+
     ############################################################################
 
-    def _updateContourExtractionActor( self, DOP = None, force = False ):
+    def _updateOctantActorsVisibility( self, DOP = None, force = False ):
         """
-        Update the contour extraction actor such that the cubic region facing
-        the camera is removed from the contour. Updates the actor on sign
-        changes of the DOP vector (Direction Of Projection). Forcing an update
-        is also supported to allow e.g. changes in slicing. Used in the
-        "Automatic" interaction style.
+        Update the octant actor such that the octant facing the camera is
+        not shown. Updates the octants on sign changes of the DOP vector
+        (Direction Of Projection). Forcing an update is also supported to allow
+        e.g. changes in slicing. Used in the "Automatic" interaction style.
         """
-        logger.debug( f"_updateContourExtractionActor( {DOP}, {force} )" )
+        logger.debug( f"_updateOctantActorsVisibility( {force} )" )
 
-        if force:
-            bounds = [0 for _ in range( 6 )]
+        if not force:
+            signChanged = False
 
             for i in range( 3 ):
                 if self._slices[i] is not None:
                     if self._DOP[i] >= 0:
-                        bounds[2 * i : 2 * i + 2] = (self._min[i], self._slices[i])
-                    else:
-                        bounds[2 * i : 2 * i + 2] = (self._slices[i], self._max[i])
-                else:
-                    bounds[2 * i : 2 * i + 2] = (self._min[i], self._max[i])
+                        if DOP[i] < 0: signChanged = True
+                    elif DOP[i] >= 0: signChanged = True
 
-            self._box.SetBounds( *bounds )
-            return
+            if signChanged: self._DOP = DOP
+            else: return
 
-        for i in range( 3 ):
-            if self._slices[i] is not None:
-                if self._DOP[i] >= 0:
-                    if DOP[i] < 0:
-                        bounds = list( self._box.GetBounds() )
-                        bounds[2 * i ] = self._slices[i]
-                        bounds[2 * i + 1] = self._max[i]
-                        self._box.SetBounds( *bounds )
-                elif DOP[i] >= 0:
-                    bounds = list( self._box.GetBounds() )
-                    bounds[2 * i ] = self._min[i]
-                    bounds[2 * i + 1] = self._slices[i]
-                    self._box.SetBounds( *bounds )
+        notToShow = set( range( 8 ) )
+
+        if self._slices[0] is not None:
+            if self._DOP[0] >= 0: notToShow &= {0, 1, 2, 3}
+            else: notToShow &= {4, 5, 6, 7}
+
+        if self._slices[1] is not None:
+            if self._DOP[1] >= 0: notToShow &= {0, 1, 4, 5}
+            else: notToShow &= {2, 3, 6, 7}
+
+        if self._slices[2] is not None:
+            if self._DOP[2] >= 0: notToShow &= {0, 2, 4, 6}
+            else: notToShow &= {1, 3, 5, 7}
+
+        toShow = set( range( 8 ) ) - notToShow
+
+        for index in toShow:
+            self._octantActors[index].SetVisibility( True )
+
+        for index in notToShow:
+            self._octantActors[index].SetVisibility( False )
 
     ############################################################################
 
@@ -653,13 +659,10 @@ class BasicScene( QObject ):
         Update the contour extraction actor and the current direction of
         projection. Used in the "Automatic" interaction style.
         """
-        logger.debug( f"_onCameraMoved()" )
+        # logger.debug( f"_onCameraMoved()" )
 
         DOP = camera.GetDirectionOfProjection()
-
-        self._updateContourExtractionActor( DOP )
-
-        self._DOP = DOP
+        self._updateOctantActorsVisibility( DOP )
 
 ################################################################################
 ################################################################################
