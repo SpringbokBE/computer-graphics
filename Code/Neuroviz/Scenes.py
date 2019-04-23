@@ -259,9 +259,7 @@ class BasicScene( QObject ):
         """
         Reset the opacity of the first contour actor.
         """
-        if self._style == "Opacity":
-            self._contourActors[0].GetProperty().SetOpacity( 1 )
-        else:
+        if not self._style == "Opacity":
             for actor in self._octantActors:
                 actor.GetProperty().SetOpacity( 1 )
 
