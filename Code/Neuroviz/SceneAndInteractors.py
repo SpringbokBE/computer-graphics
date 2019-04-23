@@ -39,12 +39,6 @@ class BasicSceneAndInteractor( QObject ):
         """
         Update the interactor with information from the scene.
         """
-        # Update the slider group ranges.
-        sliderRanges = self._scene.getBounds()
-        self._interactor.sliderGroupCoronal.setRange( *sliderRanges[0:2] )
-        self._interactor.sliderGroupSagittal.setRange( *sliderRanges[2:4] )
-        self._interactor.sliderGroupTransverse.setRange( *sliderRanges[4:6] )
-
         # Update the interaction style combobox.
         index = self._interactor.comboBoxInteractionStyle.findText( self._scene.getInteractionStyle() )
         self._interactor.comboBoxInteractionStyle.setCurrentIndex( index )
@@ -56,6 +50,15 @@ class BasicSceneAndInteractor( QObject ):
 
         index = self._interactor.comboBoxActiveContour.findText( self._scene.getActiveContourName() )
         self._interactor.comboBoxActiveContour.setCurrentIndex( index )
+
+        # Update the slider group ranges.
+        sliderRanges = self._scene.getBounds()
+        self._interactor.sliderGroupCoronal.setRange( *sliderRanges[0:2] )
+        self._interactor.sliderGroupSagittal.setRange( *sliderRanges[2:4] )
+        self._interactor.sliderGroupTransverse.setRange( *sliderRanges[4:6] )
+
+        # Update the opacity slider value.
+        self._interactor.sliderOpacity.setValue( int( 100 * self._scene.getOpacity() ) )
 
     ############################################################################
 
@@ -90,7 +93,10 @@ class BasicSceneAndInteractor( QObject ):
         self._interactor.sliderGroupSagittal.toggled.connect( self._onSliderGroupToggled )
         self._interactor.sliderGroupTransverse.toggled.connect( self._onSliderGroupToggled )
 
-        # Add a timer for smoother interaction in the "Interactive" interaction mode.
+        # Opacity slider changes.
+        self._interactor.sliderOpacity.valueChanged.connect( self._onSliderOpacityChanged )
+
+        # Add a timer for smoother interaction in the "Automatic" and "Interactive" interaction mode.
         self._sliderGroupTimer = QTimer()
         self._sliderGroupTimer.setSingleShot( True )
         self._sliderGroupTimer.timeout.connect( self._onSliderGroupTimeout )
@@ -106,6 +112,11 @@ class BasicSceneAndInteractor( QObject ):
 
         text = self._interactor.comboBoxInteractionStyle.itemText( index )
         self._scene.setInteractionStyle( text )
+
+        if text == "Automatic":
+            self._interactor.sliderOpacity.setEnabled( False )
+        else:
+            self._interactor.sliderOpacity.setEnabled( True )
 
         self._settings.setValue( f"{type( self._scene ).__name__}/InteractionStyle", text )
 
@@ -152,6 +163,17 @@ class BasicSceneAndInteractor( QObject ):
 
         self._scene.resetOpacity()
         self._scene.updateSlices( sliceValues )
+
+    ############################################################################
+
+    @pyqtSlot( int )
+    def _onSliderOpacityChanged( self, value ):
+        """
+        When the opacity slider has changed.
+        """
+        logger.debug( f"_onSliderOpacityChanged( {value} )" )
+
+        self._scene.setOpacity( value / 100 )
 
     ############################################################################
 
