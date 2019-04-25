@@ -36,20 +36,6 @@ class Gui( QMainWindow ):
 
         self.show()
 
-        # # Add the VTK scenes to the GUI.
-        # widgetName = settings.value( "BasicVisualization/WidgetName" )
-        # if widgetName:
-        #     renderWindow1 = getattr( self.ui, widgetName ).GetRenderWindow()
-        #     self.scene1 = SceneBasicVisualization( renderWindow1, self.settings )
-        # else:
-        #     logger.critical( "Could not find 'BasicVisualization/WidgetName' "\
-        #                      "in Neuroviz.ini!" )
-        #     raise Exception()
-        #
-        # # Connect the signals to their slots.
-        # self.scene1.planeWidgetXChanged.connect( self.onScene1PlaneWidgetXChange )
-        # self.ui.nvSliderGroup1.valueChanged.connect( self.onNvSliderGroup1Change )
-
     ############################################################################
 
     def _readSettings( self ):
