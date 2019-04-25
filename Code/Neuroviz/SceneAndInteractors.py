@@ -4,7 +4,7 @@ from PyQt5.QtCore import QObject, QTimer, pyqtSlot
 from PyQt5.QtWidgets import QApplication
 
 from Neuroviz.Interactors import BasicWidget
-from Neuroviz.Scenes import BasicScene
+from Neuroviz.Scenes import BasicScene, EEGScene
 
 logger = getLogger( __name__ )
 
@@ -189,6 +189,26 @@ class BasicSceneAndInteractor( QObject ):
                        self._interactor.sliderGroupTransverse.getValue())
 
         self._scene.updateSlices( sliceValues )
+
+################################################################################
+################################################################################
+
+class EEGSceneAndInteractor( QObject ):
+
+    ############################################################################
+
+    def __init__( self, ui, *args, **kwargs ):
+        """
+        Initialize the scene and interactor (widget) and connect all signals
+        to their respective slots.
+        """
+        logger.info( f"Creating {__class__.__name__}..." )
+
+        super().__init__( *args, **kwargs )
+
+        self._settings = QApplication.instance().settings
+
+        self._scene = EEGScene( ui.qvtkEEG.GetRenderWindow() )
 
 ################################################################################
 ################################################################################

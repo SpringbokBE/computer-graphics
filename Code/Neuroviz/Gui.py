@@ -7,7 +7,8 @@ from os.path import basename, isfile, normpath, relpath, splitext
 from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.uic import compileUi
 
-from Neuroviz.SceneAndInteractors import BasicSceneAndInteractor
+from Neuroviz.SceneAndInteractors import (BasicSceneAndInteractor,
+                                          EEGSceneAndInteractor)
 
 logger = getLogger( __name__ )
 
@@ -30,7 +31,8 @@ class Gui( QMainWindow ):
         self._ui = self._recompileUi()
         self._ui.setupUi( self )
 
-        self._basicSceneInteractor = BasicSceneAndInteractor( self._ui )
+        # self._basicSceneInteractor = BasicSceneAndInteractor( self._ui )
+        self._eegSceneInteractor = EEGSceneAndInteractor( self._ui )
 
         self.show()
 

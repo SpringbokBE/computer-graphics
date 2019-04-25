@@ -1,4 +1,6 @@
+
 from logging import getLogger
+from math import sqrt
 from os import getcwd
 from os.path import isfile, realpath
 
@@ -6,13 +8,14 @@ from PyQt5.QtCore import QObject
 from PyQt5.QtWidgets import QApplication
 
 from vtk import (vtkActor, vtkBox, vtkCamera, vtkContourFilter,
-                 vtkDataSetMapper, vtkExtractPolyDataGeometry,
+                 vtkDataSetMapper, vtkExtractPolyDataGeometry, vtkFloatArray,
                  vtkGenericDataObjectReader, vtkImageActor,
                  vtkImageGaussianSmooth, vtkImageMapToColors, vtkImageReslice,
                  vtkInteractorStyleTrackballCamera, vtkLookupTable, vtkMath,
                  vtkMatrix4x4, vtkNamedColors, vtkOutlineFilter, vtkPlane,
-                 vtkPointPicker, vtkPolyDataMapper, vtkPolyDataNormals,
-                 vtkRenderer, vtkStripper, vtkWindowedSincPolyDataFilter)
+                 vtkPointPicker, vtkPolyData, vtkPolyDataMapper,
+                 vtkPolyDataNormals, vtkRenderer, vtkScalarBarActor,
+                 vtkSphereSource, vtkStripper, vtkWindowedSincPolyDataFilter)
 
 logger = getLogger( __name__ )
 
@@ -775,6 +778,351 @@ class MouseInteractorToggleOpacity( vtkInteractorStyleTrackballCamera ):
                 self._actors[id].GetProperty().SetOpacity( 1 )
 
         self._renderWindow.Render()
+
+################################################################################
+################################################################################
+
+class EEGScene( QObject ):
+
+    ############################################################################
+
+    def __init__( self, renderWindow, *args, **kwargs ):
+        """
+        """
+        logger.info( f"Creating {__class__.__name__}..." )
+
+        super().__init__( *args, **kwargs )
+
+        self._renderWindow = renderWindow
+        self._settings = QApplication.instance().settings
+
+        self.initializeScene()
+
+    ############################################################################
+
+    def initializeScene( self, fileName = None ):
+        """
+        """
+        logger.debug( f"initializeScene( {fileName} )" )
+
+        if fileName is None:
+            fileName = self._settings.value( f"{__class__.__name__}/FileName", "" , type = str )
+
+        fullName = realpath( getcwd() + fileName )
+
+        if not isfile( fullName ) or not self._createReader( fullName ):
+            logger.info( f"Unable to read file {fullName}! Creating empty renderer." )
+            self._createNamedColors()
+            self._createEmptyRenderer()
+            return
+
+        logger.info( f"File {fullName} read succesfully!" )
+        self._settings.setValue( f"{__class__.__name__}/FileName", fileName )
+
+        self._createNamedColors()
+        self._createOutlineActor()
+        self._readContourInfo()
+        self._createContour()
+        self._interpolateContour()
+        # self._smoothContour()
+        self._createContourActor()
+        self._createRendererAndInteractor()
+
+        interactor = MouseInteractorAddElectrode( self._renderer, self._contourActor )
+        self._interactor.SetInteractorStyle( interactor )
+
+
+        ###
+
+        self._scalarBarActor = vtkScalarBarActor()
+        self._scalarBarActor.SetLookupTable( self._contourMapper.GetLookupTable() )
+        self._scalarBarActor.SetNumberOfLabels( 5 )
+
+        ###
+        self._renderer.AddActor( self._outlineActor )
+        self._renderer.AddActor( self._contourActor )
+        self._renderer.AddActor2D( self._scalarBarActor )
+        self._renderer.ResetCamera()
+        self._renderWindow.Render()
+
+    ############################################################################
+
+    def getBounds( self ):
+        """
+        Get the bounds of the scene.
+        """
+        extent = self._reader.GetOutput().GetExtent()
+        spacing = self._reader.GetOutput().GetSpacing()
+
+        return [ extent[i] * spacing[i // 2] for i in range( 6 ) ]
+
+    ############################################################################
+
+    def _createReader( self, fileName ):
+        """
+        Creates a VTK file reader and check if the data is valid.
+        """
+        self._reader = vtkGenericDataObjectReader()
+        self._reader.SetFileName( fileName )
+
+        return self._reader.IsFileStructuredPoints()
+
+    ############################################################################
+
+    def _createNamedColors( self ):
+        """
+        Creates named colors for convenience.
+        """
+        self._colors = vtkNamedColors()
+        self._colors.SetColor( "Background", (0.1000, 0.1000, 0.2000, 1.0000) )
+
+    ############################################################################
+
+    def _createOutlineActor( self ):
+        """
+        Creates a white outline around the volumetric data for context.
+        """
+        self._outline = vtkOutlineFilter()
+        self._outline.SetInputConnection( self._reader.GetOutputPort() )
+
+        self._outlineMapper = vtkPolyDataMapper()
+        self._outlineMapper.SetInputConnection( self._outline.GetOutputPort() )
+
+        self._outlineActor = vtkActor()
+        self._outlineActor.SetMapper( self._outlineMapper )
+
+    ############################################################################
+
+    def _readContourInfo( self ):
+        """
+        """
+        self._contourValue = self._settings.value( f"{__class__.__name__}/ContourValue", "169", type = int )
+        self._contourSmoothing = self._settings.value( f"{__class__.__name__}/ContourSmoothing", "0/0.0/20/0.5/45.0", type = str )
+        s = tuple( x.strip() for x in self._contourSmoothing.split( "/" ) )
+        self._contourSmoothing = tuple( (int( s[0] ), float( s[1] ), int( s[2] ), float( s[3] ), float( s[4] )) )
+
+    ############################################################################
+
+    def _createContour( self ):
+        """
+        """
+        self._gaussian = vtkImageGaussianSmooth()
+        self._contour = vtkContourFilter()
+
+        radius, stdDev, iters, passBand, angle = self._contourSmoothing
+
+        if radius != 0 and stdDev != 0:
+            self._gaussian.SetInputConnection( self._reader.GetOutputPort() )
+            self._gaussian.SetRadiusFactors( radius, radius, radius )
+            self._gaussian.SetStandardDeviations( stdDev, stdDev, stdDev )
+            self._contour.SetInputConnection( self._gaussian.GetOutputPort() )
+        else:
+            self._contour.SetInputConnection( self._reader.GetOutputPort() )
+
+        self._contour.SetValue( 0, self._contourValue )
+        self._contour.ComputeScalarsOff()
+        self._contour.ComputeGradientsOff()
+        self._contour.ComputeNormalsOff()
+        self._contour.Update() # !!!
+
+    ############################################################################
+
+    def _interpolateContour( self ):
+        """
+        """
+        self._electrodePositions = ((284.6666564941406, 211.0, 226.0),
+                                    (149.0, 217.0, 86.30769348144531),
+                                    (273.0, 143.0, 164.0),
+                                    (370.0, 182.22222900390625, 140.0),
+                                    (316.0, 279.0, 11.06382942199707),
+                                    (202.0, 340.0, 54.9523811340332),
+                                    (175.0, 336.3999938964844, 172.0),
+                                    (248.0, 355.0, 59.764705657958984))
+        # self._electrodePositions = ((256, 256, 100), (256, 256, 156), (256, 312, 100), (256, 312, 156),
+        #                     (312, 256, 100), (312, 256, 156), (312, 312, 100), (312, 312, 156))
+        self._electrodeValues = (0, 1, 1, 0.5, 0.5, 1, 0, 0.5)
+
+        # self._electrodePositions = self._interactor.GetInteractorStyle().getElectrodePositions()
+        # self._electrodeValues = self._interactor.GetInteractorStyle().getElectrodeValues()
+
+        nElectrodes = len( self._electrodePositions )
+        nPoints = self._contour.GetOutput().GetNumberOfPoints()
+
+        self._scalars = vtkFloatArray()
+        self._scalars.SetNumberOfValues( nPoints )
+
+        self._interpolatedContour = vtkPolyData()
+        self._interpolatedContour.DeepCopy( self._contour.GetOutput() )
+        p = [0.0, 0.0, 0.0]
+
+        for i in range( 0, nPoints ):
+            self._interpolatedContour.GetPoint( i, p )
+            dists = tuple( vtkMath.Distance2BetweenPoints( self._electrodePositions[j], p ) for j in range( nElectrodes ) )
+
+            if 0 in dists:
+                id = self._electrodePositions.index( tuple( p ) )
+                self._scalars.SetValue( i, self._electrodeValues[id] )
+                continue
+
+            inverseDists = tuple( 1 / dists[j] for j in range( nElectrodes ) )
+            sumInverseDists = sum( inverseDists )
+            value = 0
+            for j in range( nElectrodes ):
+                value += inverseDists[j] * self._electrodeValues[j]
+
+            self._scalars.SetValue( i, value / sumInverseDists )
+
+        self._interpolatedContour.GetPointData().SetScalars( self._scalars )
+
+    ############################################################################
+
+    def _smoothContour( self ):
+        """
+        """
+        radius, stdDev, iters, passBand, angle = self._contourSmoothing
+
+        self._filter = vtkWindowedSincPolyDataFilter()
+        self._filter.SetInputData( self._interpolatedContour )
+        self._filter.SetNumberOfIterations( iters )
+        self._filter.BoundarySmoothingOff()
+        self._filter.FeatureEdgeSmoothingOff()
+        self._filter.SetFeatureAngle( angle )
+        self._filter.SetPassBand( passBand )
+        self._filter.NonManifoldSmoothingOn()
+        self._filter.NormalizeCoordinatesOn()
+        self._filter.Update()
+
+        self._normal = vtkPolyDataNormals()
+        self._normal.SetInputConnection( self._filter.GetOutputPort() )
+        self._normal.SetFeatureAngle( angle )
+
+        self._smoothContour = vtkStripper()
+        self._smoothContour.SetInputConnection( self._normal.GetOutputPort() )
+
+    ############################################################################
+
+    def _createContourActor( self ):
+        """
+        """
+        self._contourMapper = vtkPolyDataMapper()
+        self._contourMapper.SetInputData( self._interpolatedContour )
+        self._contourMapper.ScalarVisibilityOn()
+        self._contourMapper.SetScalarModeToUsePointData()
+        self._contourMapper.SetColorModeToMapScalars()
+
+        self._contourActor = vtkActor()
+        self._contourActor.SetMapper( self._contourMapper )
+
+    ############################################################################
+
+    def _createRendererAndInteractor( self ):
+        """
+        Create a renderer and interactor for the scene.
+        """
+        self._renderer = vtkRenderer()
+        self._renderer.SetBackground( self._colors.GetColor3d( "Background" ) )
+        self._interactor = self._renderWindow.GetInteractor()
+
+        self._renderWindow.AddRenderer( self._renderer )
+
+        self._interactor.Initialize()
+        self._interactor.Start()
+
+################################################################################
+################################################################################
+
+class MouseInteractorAddElectrode( vtkInteractorStyleTrackballCamera ):
+
+    ############################################################################
+
+    def __init__( self, renderer, brain, parent = None ):
+        """
+        """
+        logger.info( f"Creating {__class__.__name__}..." )
+
+        self._electrodeActors, self._electrodePositions, self._electrodeValues = [], [], []
+        self._renderer, self._brain = renderer, brain
+        self._renderWindow = self._renderer.GetRenderWindow()
+
+        self.AddObserver( "MiddleButtonPressEvent", self._onMiddleButtonPress )
+        self.AddObserver( "MiddleButtonReleaseEvent", self._onMiddleButtonRelease )
+
+    ############################################################################
+
+    def getElectrodePositions( self ):
+        """
+        """
+        return self._electrodePositions
+
+    ############################################################################
+
+    def getElectrodeValues( self ):
+        """
+        """
+        return self._electrodeValues
+
+    ############################################################################
+
+    def _onMiddleButtonPress( self, object, event ):
+        """
+        Override to prevent other middle mouse button interactions.
+        """
+        logger.debug( "_onMiddleButtonPress()" )
+        pass
+
+    ############################################################################
+
+    def _onMiddleButtonRelease( self, object, event ):
+        """
+        Add a new electrode.
+        """
+        logger.debug( "_onMiddleButtonRelease()" )
+
+        clickPosition = self.GetInteractor().GetEventPosition()
+
+        picker = vtkPointPicker()
+        picker.Pick( *clickPosition[:2], 0, self._renderer )
+        pickPosition = picker.GetPickPosition()
+
+        pickedProp3Ds = picker.GetProp3Ds()
+        pickedProp3Ds.InitTraversal()
+
+        pickedActors = set()
+
+        prop3D = pickedProp3Ds.GetNextProp3D()
+        while prop3D is not None:
+            actor = vtkActor.SafeDownCast( prop3D )
+            if actor: pickedActors.add( actor )
+            prop3D = pickedProp3Ds.GetNextProp3D()
+
+        if not self._brain in pickedActors: return
+
+        print( pickPosition )
+
+        # self._sphere = vtkSphereSource()
+        # self._sphere.SetCenter( pickPosition )
+        # self._sphere.SetRadius( 5.0 )
+        #
+        # self._sphereMapper = vtkPolyDataMapper()
+        # self._sphereMapper.SetInputConnection( self._sphere.GetOutputPort() )
+        #
+        # self._sphereActor = vtkActor()
+        # self._sphereActor.SetMapper( self._sphereMapper )
+        #
+        # from random import choices
+        #
+        # if len( self._electrodeActors ) >= 8:
+        #     self._renderer.RemoveActor( self._electrodeActors[0] )
+        #     self._electrodeActors = self.electrodeActors[1:] + [ self._sphereActor ]
+        #     self._electrodePositions = self._electrodePositions[1:] + [ pickPosition ]
+        #     self._electrodeValues = self._electrodeValues[1:] + [ choice( (0.0, 0.5, 1.0) ) ]
+        # else:
+        #     self._electrodeActors.append( self._sphereActor )
+        #     self._electrodePositions.append( pickPosition )
+        #     self._electrodeValues.append( choice( (0.0, 0.5, 1.0) ) )
+        #
+        # self._renderer.AddActor( self._sphereActor )
+        # self._renderWindow.Render()
 
 ################################################################################
 ################################################################################
