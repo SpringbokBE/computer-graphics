@@ -3,6 +3,7 @@ from logging import getLogger
 from math import sqrt
 from os import getcwd
 from os.path import isfile, realpath
+from random import choice
 
 from PyQt5.QtCore import QObject, QTimer
 from PyQt5.QtWidgets import QApplication
@@ -797,10 +798,13 @@ class EEGScene( QObject ):
         self._renderWindow = renderWindow
         self._settings = QApplication.instance().settings
 
+        self._electrodeActors = []
+        self._electrodePositions = []
+        self._electrodeValues = []
+
         self.initializeScene()
 
         self._timer = QTimer()
-        self._timer.setSingleShot( True )
         self._timer.timeout.connect( self._onTimeout )
 
     ############################################################################
@@ -833,7 +837,7 @@ class EEGScene( QObject ):
         self._createContourActor()
         self._createRendererAndInteractor()
 
-        interactor = MouseInteractorAddElectrode( self._renderer, self._contourActor, self._interpolateContour )
+        interactor = MouseInteractorAddElectrode( self._renderer, self._contourActor, self.addElectrode )
         self._interactor.SetInteractorStyle( interactor )
 
         ###
@@ -847,6 +851,41 @@ class EEGScene( QObject ):
         self._renderer.AddActor( self._contourActor )
         self._renderer.AddActor2D( self._scalarBarActor )
         self._renderer.ResetCamera()
+        self._renderWindow.Render()
+
+    ############################################################################
+
+    def addElectrode( self, position ):
+        """
+        """
+        self._sphere = vtkSphereSource()
+        self._sphere.SetCenter( position )
+        self._sphere.SetRadius( 5.0 )
+
+        self._sphereMapper = vtkPolyDataMapper()
+        self._sphereMapper.SetInputConnection( self._sphere.GetOutputPort() )
+
+        self._sphereActor = vtkActor()
+        self._sphereActor.SetMapper( self._sphereMapper )
+
+        self._renderer.AddActor( self._sphereActor )
+
+        if len( self._electrodeActors ) < 8:
+            self._electrodeActors.append( self._sphereActor )
+            self._electrodePositions.append( position )
+            self._electrodeValues.append( choice( (0.0, 0.5, 1.0) ) )
+            if len( self._electrodeActors ) == 8:
+                self._renderWindow.Render()
+                self._interpolateContour()
+                self._timer.start( 5_000 )
+        else:
+            self._renderer.RemoveActor( self._electrodeActors[0] )
+            self._electrodeActors = self._electrodeActors[1:] + [ self._sphereActor ]
+            self._electrodePositions = self._electrodePositions[1:] + [ position ]
+            self._electrodeValues = self._electrodeValues[1:] + [ choice( (0.0, 0.5, 1.0) ) ]
+            self._renderWindow.Render() # Show the actor before interpolating.
+            self._interpolateContour()
+
         self._renderWindow.Render()
 
     ############################################################################
@@ -931,16 +970,16 @@ class EEGScene( QObject ):
 
     ############################################################################
 
-    def _interpolateContour( self, electrodePositions = None, electrodeValues = None ):
+    def _interpolateContour( self ):
         """
         """
-        if electrodePositions is None:
+        if not self._electrodePositions:
             self._filter = vtkWindowedSincPolyDataFilter()
             self._filter.SetInputData( self._contour.GetOutput() )
             return
 
         logger.debug( "Interpolating..." )
-        nElectrodes = len( electrodePositions )
+        nElectrodes = len( self._electrodeActors )
         nPoints = self._contour.GetOutput().GetNumberOfPoints()
 
         self._scalars = vtkFloatArray()
@@ -953,20 +992,19 @@ class EEGScene( QObject ):
 
         for i in range( 0, nPoints ):
             self._interpolatedContour.GetPoint( i, p )
-            dists = tuple( vtkMath.Distance2BetweenPoints( electrodePositions[j], p ) for j in range( nElectrodes ) )
+            dists = tuple( vtkMath.Distance2BetweenPoints( self._electrodePositions[j], p ) for j in range( nElectrodes ) )
 
             if 0 in dists:
-                id = electrodePositions.index( tuple( p ) )
-                self._scalars.SetValue( i, electrodeValues[id] )
+                id = self._electrodePositions.index( tuple( p ) )
+                self._scalars.SetValue( i, self._electrodeValues[id] )
                 continue
 
             inverseDists = tuple( 1 / dists[j] for j in range( nElectrodes ) )
-            sumInverseDists = sum( inverseDists )
             value = 0
             for j in range( nElectrodes ):
-                value += inverseDists[j] * electrodeValues[j]
+                value += inverseDists[j] * self._electrodeValues[j]
 
-            self._scalars.SetValue( i, value / sumInverseDists )
+            self._scalars.SetValue( i, value / sum( inverseDists ) )
 
         self._interpolatedContour.GetPointData().SetScalars( self._scalars )
         self._filter.SetInputData( self._interpolatedContour )
@@ -1029,7 +1067,14 @@ class EEGScene( QObject ):
         """
         """
         logger.debug( f"_onTimeout()" )
-        pass
+
+        self._renderWindow.Render()
+
+        self._electrodeValues = [ choice( (0.0, 0.5, 1.0) ) for _ in range( len( self._electrodeActors ) ) ]
+
+        print( f"Values = {self._electrodeValues}" )
+
+        self._interpolateContour()
 
 ################################################################################
 ################################################################################
@@ -1103,32 +1148,7 @@ class MouseInteractorAddElectrode( vtkInteractorStyleTrackballCamera ):
         worldPicker.Pick( *clickPosition[:2], 0, self._renderer )
         xyz = worldPicker.GetPickPosition()
 
-        self._sphere = vtkSphereSource()
-        self._sphere.SetCenter( xyz )
-        self._sphere.SetRadius( 5.0 )
-
-        self._sphereMapper = vtkPolyDataMapper()
-        self._sphereMapper.SetInputConnection( self._sphere.GetOutputPort() )
-
-        self._sphereActor = vtkActor()
-        self._sphereActor.SetMapper( self._sphereMapper )
-
-        from random import choice
-
-        if len( self._electrodeActors ) >= 8:
-            self._renderer.RemoveActor( self._electrodeActors[0] )
-            self._electrodeActors = self._electrodeActors[1:] + [ self._sphereActor ]
-            self._electrodePositions = self._electrodePositions[1:] + [ xyz ]
-            self._electrodeValues = self._electrodeValues[1:] + [ choice( (0.0, 0.5, 1.0) ) ]
-        else:
-            self._electrodeActors.append( self._sphereActor )
-            self._electrodePositions.append( xyz )
-            self._electrodeValues.append( choice( (0.0, 0.5, 1.0) ) )
-
-        self._renderer.AddActor( self._sphereActor )
-        if len( self._electrodeActors ) >= 8:
-            self._callback( self._electrodePositions, self._electrodeValues )
-        self._renderWindow.Render()
+        self._callback( xyz )
 
 ################################################################################
 ################################################################################
