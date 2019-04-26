@@ -1041,9 +1041,12 @@ class EEGScene( QObject ):
         self._electrodes.SetPoints( self._points )
         self._electrodes.GetPointData().SetScalars( self._values )
 
+        bounds = list( self._contour.GetOutput().GetBounds() )
+        bounds = [ x + y for x, y in zip( bounds, [-1, 1, -1, 1, -1, 1] ) ]
+
         self._shepard = vtkShepardMethod()
         self._shepard.SetInputData( self._electrodes )
-        self._shepard.SetModelBounds( self._contour.GetOutput().GetBounds() )
+        self._shepard.SetModelBounds( bounds )
         self._shepard.SetSampleDimensions( 50, 50, 25 )
         self._shepard.SetMaximumDistance( 1.0 )
         self._shepard.SetNullValue( 0.5 )
