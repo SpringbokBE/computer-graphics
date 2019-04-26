@@ -838,8 +838,8 @@ class EEGScene( QObject ):
         self._createOutlineActor()
         self._readContourInfo()
         self._createContour()
-        self._interpolateContour()
         self._smoothContour()
+        self._interpolateContour()
         self._createContourActor()
         self._createScalarBarActor()
         self._createRendererAndInteractor()
@@ -988,48 +988,6 @@ class EEGScene( QObject ):
 
     ############################################################################
 
-    def _interpolateContour( self ):
-        """
-        Interpolate the scalar values of the contour based on the values and
-        positions of the electrodes. Uses an inverse distance weighting (IDW)
-        function defined by Shepard. To provide better efficiency and control,
-        the data i interpolated onto a grid and then resampled onto the contour
-        afterwards.
-        """
-        logger.debug( f"_interpolateContour()" )
-
-        if not self._electrodePositions:
-            self._filter = vtkWindowedSincPolyDataFilter()
-            self._filter.SetInputConnection( self._contour.GetOutputPort() )
-            return
-
-        self._points = vtkPoints()
-        self._values = vtkFloatArray()
-
-        for point, value in zip( self._electrodePositions, self._electrodeValues ):
-            self._points.InsertNextPoint( point )
-            self._values.InsertNextValue( value )
-
-        self._electrodes = vtkPolyData()
-        self._electrodes.SetPoints( self._points )
-        self._electrodes.GetPointData().SetScalars( self._values )
-
-        self._shepard = vtkShepardMethod()
-        self._shepard.SetInputData( self._electrodes )
-        self._shepard.SetModelBounds( self._contour.GetOutput().GetBounds() )
-        self._shepard.SetSampleDimensions( 50, 50, 25 )
-        self._shepard.SetMaximumDistance( 0.5 )
-        self._shepard.SetNullValue( 0.5 )
-        self._shepard.SetPowerParameter( 2 )
-
-        self._resample = vtkResampleWithDataSet()
-        self._resample.SetInputConnection( self._contour.GetOutputPort() )
-        self._resample.SetSourceConnection( self._shepard.GetOutputPort() )
-
-        self._filter.SetInputConnection( self._resample.GetOutputPort() )
-
-    ############################################################################
-
     def _smoothContour( self ):
         """
         Smooth the contours using a windowed sinc filter with the provided
@@ -1037,6 +995,8 @@ class EEGScene( QObject ):
         """
         radius, stdDev, iters, passBand, angle = self._contourSmoothing
 
+        self._filter = vtkWindowedSincPolyDataFilter()
+        self._filter.SetInputConnection( self._contour.GetOutputPort() )
         self._filter.SetNumberOfIterations( iters )
         self._filter.BoundarySmoothingOff()
         self._filter.FeatureEdgeSmoothingOff()
@@ -1055,12 +1015,52 @@ class EEGScene( QObject ):
 
     ############################################################################
 
+    def _interpolateContour( self ):
+        """
+        Interpolate the scalar values of the contour based on the values and
+        positions of the electrodes. Uses an inverse distance weighting (IDW)
+        function defined by Shepard. To provide better efficiency and control,
+        the data i interpolated onto a grid and then resampled onto the contour
+        afterwards.
+        """
+        logger.debug( f"_interpolateContour()" )
+
+        if not self._electrodePositions:
+            self._contourMapper = vtkPolyDataMapper()
+            self._contourMapper.SetInputConnection( self._smoothedContour.GetOutputPort() )
+            return
+
+        self._points = vtkPoints()
+        self._values = vtkFloatArray()
+
+        for point, value in zip( self._electrodePositions, self._electrodeValues ):
+            self._points.InsertNextPoint( point )
+            self._values.InsertNextValue( value )
+
+        self._electrodes = vtkPolyData()
+        self._electrodes.SetPoints( self._points )
+        self._electrodes.GetPointData().SetScalars( self._values )
+
+        self._shepard = vtkShepardMethod()
+        self._shepard.SetInputData( self._electrodes )
+        self._shepard.SetModelBounds( self._contour.GetOutput().GetBounds() )
+        self._shepard.SetSampleDimensions( 50, 50, 25 )
+        self._shepard.SetMaximumDistance( 1.0 )
+        self._shepard.SetNullValue( 0.5 )
+        self._shepard.SetPowerParameter( 2 )
+
+        self._resample = vtkResampleWithDataSet()
+        self._resample.SetInputConnection( self._smoothedContour.GetOutputPort() )
+        self._resample.SetSourceConnection( self._shepard.GetOutputPort() )
+
+        self._contourMapper.SetInputConnection( self._resample.GetOutputPort() )
+
+    ############################################################################
+
     def _createContourActor( self ):
         """
         Creates an actor to show the contour.
         """
-        self._contourMapper = vtkPolyDataMapper()
-        self._contourMapper.SetInputConnection( self._smoothedContour.GetOutputPort() )
         self._contourMapper.ScalarVisibilityOn()
         self._contourMapper.SetScalarModeToUsePointData()
         self._contourMapper.SetColorModeToMapScalars()
