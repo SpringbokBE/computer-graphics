@@ -214,13 +214,18 @@ class EEGSceneAndInteractor( QObject ):
         self._updateSceneFromInteractor()
         self._connectSignalsToSlots()
 
+        self._interactor.sliderGroupAnimations.setRange( 200, 10_000 )
+
     ############################################################################
 
     def _updateSceneFromInteractor( self ):
         """
         Update the scene with information from the interactor.
         """
-        self._scene.setAnimationEnabled( self._interactor._checkBoxAnimation.isChecked() )
+        if self._interactor.sliderGroupAnimations.getChecked():
+            self._scene.setUpdateInterval( self._interactor.sliderGroupAnimations.getValue() )
+        else:
+            self._scene.setUpdateInterval( None )
 
     ############################################################################
 
@@ -228,16 +233,27 @@ class EEGSceneAndInteractor( QObject ):
         """
         Connect all signals to their slots.
         """
-        self._interactor._checkBoxAnimation.stateChanged.connect( self._onCheckBoxAnimationStateChanged )
+        self._interactor.sliderGroupAnimations.toggled.connect( self._onSliderGroupAnimationsToggled )
+        self._interactor.sliderGroupAnimations.valueChanged.connect( self._onSliderGroupAnimationsValueChanged )
+
+    ############################################################################
+
+    @pyqtSlot( bool )
+    def _onSliderGroupAnimationsToggled( self, state ):
+        """
+        When the animation slider group has been toggled.
+        """
+        if state: self._scene.setUpdateInterval( self._interactor.sliderGroupAnimations.getValue() )
+        else: self._scene.setUpdateInterval( None )
 
     ############################################################################
 
     @pyqtSlot( int )
-    def _onCheckBoxAnimationStateChanged( self, state ):
+    def _onSliderGroupAnimationsValueChanged( self, value ):
         """
-        When the animation checkbox has changed state.
+        When the animation slider group value has changed.
         """
-        self._scene.setAnimationEnabled( state )
+        self._scene.setUpdateInterval( value )
 
 ################################################################################
 ################################################################################
