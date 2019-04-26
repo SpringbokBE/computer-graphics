@@ -35,7 +35,7 @@ class Ui_qmwMain(object):
         self.qvtkEEG.setObjectName("qvtkEEG")
         self.verticalLayout_3.addWidget(self.qvtkEEG)
         self.qvtkXY = QVTKRenderWindowInteractor(self.qwEEG)
-        self.qvtkXY.setMaximumSize(QtCore.QSize(16777215, 250))
+        self.qvtkXY.setMaximumSize(QtCore.QSize(16777215, 300))
         self.qvtkXY.setObjectName("qvtkXY")
         self.verticalLayout_3.addWidget(self.qvtkXY)
         self.tabWidget.addTab(self.qwEEG, "")
