@@ -1,4 +1,3 @@
-
 from logging import getLogger
 from math import sqrt
 from os import getcwd
@@ -789,7 +788,7 @@ class EEGScene( QObject ):
 
     ############################################################################
 
-    def __init__( self, renderWindow, *args, **kwargs ):
+    def __init__( self, renderWindow, chartXYWindow, *args, **kwargs ):
         """
         Creates a scene in which a brain model is shown and 8 electrodes can be
         added. Random values are generated at the electrodes and the model is
@@ -800,6 +799,7 @@ class EEGScene( QObject ):
         super().__init__( *args, **kwargs )
 
         self._renderWindow = renderWindow
+        self._chartXYWindow = chartXYWindow
         self._settings = QApplication.instance().settings
 
         self._electrodeActors = []
@@ -846,6 +846,64 @@ class EEGScene( QObject ):
 
         interactor = MouseInteractorAddElectrode( self._renderer, self._contourActor, self.addElectrode )
         self._interactor.SetInteractorStyle( interactor )
+
+        from math import sin, cos
+        from vtk import vtkChartXY, vtkContextView, vtkTable
+
+        self._chart = vtkChartXY()
+        self._view = vtkContextView()
+        self._view.GetRenderer().SetBackground( 1.0, 1.0, 1.0 )
+        self._view.GetScene().AddItem( self._chart )
+        self._view.SetRenderWindow( self._chartXYWindow )
+
+        ###
+
+        table = vtkTable()
+
+        arrX = vtkFloatArray()
+        arrX.SetName( "X Axis" )
+
+        arrC = vtkFloatArray()
+        arrC.SetName( "Cosine" )
+
+        arrS = vtkFloatArray()
+        arrS.SetName( "Sine" )
+
+        arrS2 = vtkFloatArray()
+        arrS2.SetName( "Sine2 ")
+
+        numPoints = 69
+        inc = 7.5 / (numPoints - 1)
+
+        for i in range( numPoints ):
+            arrX.InsertNextValue( i * inc )
+            arrC.InsertNextValue( cos(i * inc) + 0.0 )
+            arrS.InsertNextValue( sin(i * inc) + 0.0 )
+            arrS2.InsertNextValue( sin(i * inc) + 0.5 )
+
+        table.AddColumn( arrX )
+        table.AddColumn( arrC )
+        table.AddColumn( arrS )
+        table.AddColumn( arrS2 )
+
+        line = self._chart.AddPlot( 0 )
+        line.SetInputData( table, 0, 1 )
+        line.SetColor( 0, 255, 0, 255 )
+        line.SetWidth( 1.0 )
+
+        line = self._chart.AddPlot( 0 )
+        line.SetInputData( table, 0, 2 )
+        line.SetColor( 255, 0, 0, 255 )
+        line.SetWidth( 5.0 )
+
+        line = self._chart.AddPlot( 0 )
+        line.SetInputData( table, 0, 3 )
+        line.SetColor( 0, 0, 255, 255 )
+        line.SetWidth( 4.0 )
+
+        ###
+
+        self._chartXYWindow.Render()
 
         self._renderer.AddActor( self._outlineActor )
         self._renderer.AddActor( self._contourActor )
