@@ -208,7 +208,7 @@ class EEGSceneAndInteractor( QObject ):
 
         self._settings = QApplication.instance().settings
 
-        self._scene = EEGScene( ui.qvtkEEG.GetRenderWindow() )
+        self._scene = EEGScene( ui.qvtkEEG.GetRenderWindow(), ui.qvtkXY.GetRenderWindow() )
         self._interactor = EEGWidget( ui.qdwDock )
 
         self._updateSceneFromInteractor()

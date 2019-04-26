@@ -34,6 +34,10 @@ class Ui_qmwMain(object):
         self.qvtkEEG = QVTKRenderWindowInteractor(self.qwEEG)
         self.qvtkEEG.setObjectName("qvtkEEG")
         self.verticalLayout_3.addWidget(self.qvtkEEG)
+        self.qvtkXY = QVTKRenderWindowInteractor(self.qwEEG)
+        self.qvtkXY.setMaximumSize(QtCore.QSize(16777215, 250))
+        self.qvtkXY.setObjectName("qvtkXY")
+        self.verticalLayout_3.addWidget(self.qvtkXY)
         self.tabWidget.addTab(self.qwEEG, "")
         self.qwDSA = QtWidgets.QWidget()
         self.qwDSA.setObjectName("qwDSA")
@@ -60,7 +64,7 @@ class Ui_qmwMain(object):
         qmwMain.addDockWidget(QtCore.Qt.DockWidgetArea(2), self.qdwDock)
 
         self.retranslateUi(qmwMain)
-        self.tabWidget.setCurrentIndex(0)
+        self.tabWidget.setCurrentIndex(1)
         QtCore.QMetaObject.connectSlotsByName(qmwMain)
 
     def retranslateUi(self, qmwMain):

@@ -21,7 +21,7 @@
     <item>
      <widget class="QTabWidget" name="tabWidget">
       <property name="currentIndex">
-       <number>0</number>
+       <number>1</number>
       </property>
       <widget class="QWidget" name="qwBasic">
        <attribute name="title">
@@ -40,6 +40,16 @@
        <layout class="QVBoxLayout" name="verticalLayout_3">
         <item>
          <widget class="QVTKRenderWindowInteractor" name="qvtkEEG"/>
+        </item>
+        <item>
+         <widget class="QVTKRenderWindowInteractor" name="qvtkXY">
+          <property name="maximumSize">
+           <size>
+            <width>16777215</width>
+            <height>250</height>
+           </size>
+          </property>
+         </widget>
         </item>
        </layout>
       </widget>
