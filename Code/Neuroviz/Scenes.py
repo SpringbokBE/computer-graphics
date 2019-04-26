@@ -904,15 +904,13 @@ class EEGScene( QObject ):
 
     ############################################################################
 
-    def setAnimationEnabled( self, enabled ):
+    def setUpdateInterval( self, interval = None ):
         """
-        Enables/disables the animation.
+        Enables/disables the animation and its speed.
         """
-        self._animationEnabled = enabled
+        self._animationEnabled = interval is not None
 
-        if self._animationEnabled:
-            self._updateInterval = self._settings.value( f"{__class__.__name__}/UpdateInterval", 5_000, type = int )
-            self._timer.start( self._updateInterval )
+        if self._animationEnabled: self._timer.start( interval )
         else: self._timer.stop()
 
     ############################################################################
@@ -1181,15 +1179,17 @@ class EEGScene( QObject ):
         """
         logger.debug( f"_onTimeout()" )
 
+        if not self._electrodeActors: return
+
         self._renderWindow.Render()
 
         self._electrodeValues = [ choice( (0.0, 0.5, 1.0) ) for _ in range( len( self._electrodeActors ) ) ]
 
         self._interpolateContour()
-        self._updateCharts()
+        # self._updateCharts()
 
         self._renderWindow.Render()
-        self._chartXYWindow.Render()
+        # self._chartXYWindow.Render()
 
 ################################################################################
 ################################################################################
