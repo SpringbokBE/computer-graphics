@@ -9,14 +9,15 @@ from PyQt5.QtCore import QObject, QTimer
 from PyQt5.QtWidgets import QApplication
 
 from vtk import (vtkActor, vtkBox, vtkCamera, vtkContourFilter,
-                 vtkDataSetMapper, vtkExtractPolyDataGeometry, vtkFloatArray,
+                 vtkExtractPolyDataGeometry, vtkFloatArray,
                  vtkGenericDataObjectReader, vtkImageActor,
                  vtkImageGaussianSmooth, vtkImageMapToColors, vtkImageReslice,
                  vtkInteractorStyleTrackballCamera, vtkLookupTable, vtkMath,
                  vtkMatrix4x4, vtkNamedColors, vtkOutlineFilter, vtkPlane,
-                 vtkPointPicker, vtkPolyData, vtkPolyDataMapper,
-                 vtkPolyDataNormals, vtkRenderer, vtkScalarBarActor,
-                 vtkSphereSource, vtkStripper, vtkWindowedSincPolyDataFilter,
+                 vtkPointPicker, vtkPoints, vtkPolyData, vtkPolyDataMapper,
+                 vtkPolyDataNormals, vtkRenderer, vtkResampleWithDataSet,
+                 vtkScalarBarActor, vtkShepardMethod, vtkSphereSource,
+                 vtkStripper, vtkWindowedSincPolyDataFilter,
                  vtkWorldPointPicker)
 
 logger = getLogger( __name__ )
@@ -790,6 +791,9 @@ class EEGScene( QObject ):
 
     def __init__( self, renderWindow, *args, **kwargs ):
         """
+        Creates a scene in which a brain model is shown and 8 electrodes can be
+        added. Random values are generated at the electrodes and the model is
+        colored by using interpolation.
         """
         logger.info( f"Creating {__class__.__name__}..." )
 
@@ -811,6 +815,7 @@ class EEGScene( QObject ):
 
     def initializeScene( self, fileName = None ):
         """
+        Initializes the scene using the given (relative) filename.
         """
         logger.debug( f"initializeScene( {fileName} )" )
 
@@ -835,18 +840,12 @@ class EEGScene( QObject ):
         self._interpolateContour()
         self._smoothContour()
         self._createContourActor()
+        self._createScalarBarActor()
         self._createRendererAndInteractor()
 
         interactor = MouseInteractorAddElectrode( self._renderer, self._contourActor, self.addElectrode )
         self._interactor.SetInteractorStyle( interactor )
 
-        ###
-
-        self._scalarBarActor = vtkScalarBarActor()
-        self._scalarBarActor.SetLookupTable( self._contourMapper.GetLookupTable() )
-        self._scalarBarActor.SetNumberOfLabels( 5 )
-
-        ###
         self._renderer.AddActor( self._outlineActor )
         self._renderer.AddActor( self._contourActor )
         self._renderer.AddActor2D( self._scalarBarActor )
@@ -857,6 +856,8 @@ class EEGScene( QObject ):
 
     def addElectrode( self, position ):
         """
+        Add a new electrode to the scene at the given position, with a maximum
+        of 8 electrodes.
         """
         self._sphere = vtkSphereSource()
         self._sphere.SetCenter( position )
@@ -875,7 +876,7 @@ class EEGScene( QObject ):
             self._electrodePositions.append( position )
             self._electrodeValues.append( choice( (0.0, 0.5, 1.0) ) )
             if len( self._electrodeActors ) == 8:
-                self._renderWindow.Render()
+                self._renderWindow.Render() # Show the actor before interpolating.
                 self._interpolateContour()
                 self._timer.start( 5_000 )
         else:
@@ -938,6 +939,8 @@ class EEGScene( QObject ):
 
     def _readContourInfo( self ):
         """
+        Read information from the settings, such as contour value for the iso-
+        surface creation and the smoothing settings.
         """
         self._contourValue = self._settings.value( f"{__class__.__name__}/ContourValue", "169", type = int )
         self._contourSmoothing = self._settings.value( f"{__class__.__name__}/ContourSmoothing", "0/0.0/20/0.5/45.0", type = str )
@@ -948,6 +951,8 @@ class EEGScene( QObject ):
 
     def _createContour( self ):
         """
+        Creates an isosurface (contour) from the input data. If smoothing is
+        enabled in the settings, smooth the data first.
         """
         self._gaussian = vtkImageGaussianSmooth()
         self._contour = vtkContourFilter()
@@ -966,53 +971,54 @@ class EEGScene( QObject ):
         self._contour.ComputeScalarsOff()
         self._contour.ComputeGradientsOff()
         self._contour.ComputeNormalsOff()
-        self._contour.Update() # !!!
 
     ############################################################################
 
     def _interpolateContour( self ):
         """
+        Interpolate the scalar values of the contour based on the values and
+        positions of the electrodes. Uses an inverse distance weighting (IDW)
+        function defined by Shepard. To provide better efficiency and control,
+        the data i interpolated onto a grid and then resampled onto the contour
+        afterwards.
         """
+        logger.debug( f"_interpolateContour()" )
+
         if not self._electrodePositions:
             self._filter = vtkWindowedSincPolyDataFilter()
-            self._filter.SetInputData( self._contour.GetOutput() )
+            self._filter.SetInputConnection( self._contour.GetOutputPort() )
             return
 
-        logger.debug( "Interpolating..." )
-        nElectrodes = len( self._electrodeActors )
-        nPoints = self._contour.GetOutput().GetNumberOfPoints()
+        self._points = vtkPoints()
+        self._values = vtkFloatArray()
 
-        self._scalars = vtkFloatArray()
-        self._scalars.SetNumberOfValues( nPoints )
+        for point, value in zip( self._electrodePositions, self._electrodeValues ):
+            self._points.InsertNextPoint( point )
+            self._values.InsertNextValue( value )
 
-        self._interpolatedContour = vtkPolyData()
-        self._interpolatedContour.DeepCopy( self._contour.GetOutput() )
+        self._electrodes = vtkPolyData()
+        self._electrodes.SetPoints( self._points )
+        self._electrodes.GetPointData().SetScalars( self._values )
 
-        p = [0.0, 0.0, 0.0]
+        self._shepard = vtkShepardMethod()
+        self._shepard.SetInputData( self._electrodes )
+        self._shepard.SetModelBounds( self._contour.GetOutput().GetBounds() )
+        self._shepard.SetSampleDimensions( 50, 50, 25 )
+        self._shepard.SetMaximumDistance( 0.5 )
+        self._shepard.SetPowerParameter( 2 )
 
-        for i in range( 0, nPoints ):
-            self._interpolatedContour.GetPoint( i, p )
-            dists = tuple( vtkMath.Distance2BetweenPoints( self._electrodePositions[j], p ) for j in range( nElectrodes ) )
+        self._resample = vtkResampleWithDataSet()
+        self._resample.SetInputConnection( self._contour.GetOutputPort() )
+        self._resample.SetSourceConnection( self._shepard.GetOutputPort() )
 
-            if 0 in dists:
-                id = self._electrodePositions.index( tuple( p ) )
-                self._scalars.SetValue( i, self._electrodeValues[id] )
-                continue
-
-            inverseDists = tuple( 1 / dists[j] for j in range( nElectrodes ) )
-            value = 0
-            for j in range( nElectrodes ):
-                value += inverseDists[j] * self._electrodeValues[j]
-
-            self._scalars.SetValue( i, value / sum( inverseDists ) )
-
-        self._interpolatedContour.GetPointData().SetScalars( self._scalars )
-        self._filter.SetInputData( self._interpolatedContour )
+        self._filter.SetInputConnection( self._resample.GetOutputPort() )
 
     ############################################################################
 
     def _smoothContour( self ):
         """
+        Smooth the contours using a windowed sinc filter with the provided
+        settings.
         """
         radius, stdDev, iters, passBand, angle = self._contourSmoothing
 
@@ -1036,6 +1042,7 @@ class EEGScene( QObject ):
 
     def _createContourActor( self ):
         """
+        Creates an actor to show the contour.
         """
         self._contourMapper = vtkPolyDataMapper()
         self._contourMapper.SetInputConnection( self._smoothedContour.GetOutputPort() )
@@ -1045,6 +1052,16 @@ class EEGScene( QObject ):
 
         self._contourActor = vtkActor()
         self._contourActor.SetMapper( self._contourMapper )
+
+    ############################################################################
+
+    def _createScalarBarActor( self ):
+        """
+        Creates a 2D actor which shows the color scale.
+        """
+        self._scalarBarActor = vtkScalarBarActor()
+        self._scalarBarActor.SetLookupTable( self._contourMapper.GetLookupTable() )
+        self._scalarBarActor.SetNumberOfLabels( 5 )
 
     ############################################################################
 
@@ -1065,14 +1082,14 @@ class EEGScene( QObject ):
 
     def _onTimeout( self ):
         """
+        On timeout, generate new random values for the electrodes and update
+        the contour.
         """
         logger.debug( f"_onTimeout()" )
 
         self._renderWindow.Render()
 
         self._electrodeValues = [ choice( (0.0, 0.5, 1.0) ) for _ in range( len( self._electrodeActors ) ) ]
-
-        print( f"Values = {self._electrodeValues}" )
 
         self._interpolateContour()
 
@@ -1083,30 +1100,19 @@ class MouseInteractorAddElectrode( vtkInteractorStyleTrackballCamera ):
 
     ############################################################################
 
-    def __init__( self, renderer, brain, callback, parent = None ):
+    def __init__( self, renderer, contour, callback, parent = None ):
         """
+        Custom mouse interactor used in the EEG scene. Allows to pick points
+        on the provided contour by using a middle mouse button click.
+        When the button is released, the callback function is called and is
+        provided with the 3D click position as argument.
         """
         logger.info( f"Creating {__class__.__name__}..." )
 
-        self._electrodeActors, self._electrodePositions, self._electrodeValues = [], [], []
-        self._renderer, self._brain, self._callback = renderer, brain, callback
+        self._renderer, self._contour, self._callback = renderer, contour, callback
         self._renderWindow = self._renderer.GetRenderWindow()
         self.AddObserver( "MiddleButtonPressEvent", self._onMiddleButtonPress )
         self.AddObserver( "MiddleButtonReleaseEvent", self._onMiddleButtonRelease )
-
-    ############################################################################
-
-    def getElectrodePositions( self ):
-        """
-        """
-        return self._electrodePositions
-
-    ############################################################################
-
-    def getElectrodeValues( self ):
-        """
-        """
-        return self._electrodeValues
 
     ############################################################################
 
@@ -1127,6 +1133,8 @@ class MouseInteractorAddElectrode( vtkInteractorStyleTrackballCamera ):
 
         clickPosition = self.GetInteractor().GetEventPosition()
 
+        # Use the vtkPointPicker to check if the provided contour is picked.
+        # If not, abort.
         picker = vtkPointPicker()
         picker.Pick( *clickPosition[:2], 0, self._renderer )
         pickPosition = picker.GetPickPosition()
@@ -1142,8 +1150,11 @@ class MouseInteractorAddElectrode( vtkInteractorStyleTrackballCamera ):
             if actor: pickedActors.add( actor )
             prop3D = pickedProp3Ds.GetNextProp3D()
 
-        if not self._brain in pickedActors: return
+        if not self._contour in pickedActors: return
 
+        # Use the vtkWorldPointPicker to get the 3D coordinates of the picked
+        # point. This class is required to pick only the front face of the
+        # contour. Using vtkPointPicker will sometimes pick backfaces.
         worldPicker = vtkWorldPointPicker()
         worldPicker.Pick( *clickPosition[:2], 0, self._renderer )
         xyz = worldPicker.GetPickPosition()
