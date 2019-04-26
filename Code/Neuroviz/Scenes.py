@@ -808,6 +808,7 @@ class EEGScene( QObject ):
 
         self.initializeScene()
 
+        self._animationEnabled = False
         self._timer = QTimer()
         self._timer.timeout.connect( self._onTimeout )
 
@@ -878,7 +879,6 @@ class EEGScene( QObject ):
             if len( self._electrodeActors ) == 8:
                 self._renderWindow.Render() # Show the actor before interpolating.
                 self._interpolateContour()
-                self._timer.start( 5_000 )
         else:
             self._renderer.RemoveActor( self._electrodeActors[0] )
             self._electrodeActors = self._electrodeActors[1:] + [ self._sphereActor ]
@@ -899,6 +899,20 @@ class EEGScene( QObject ):
         spacing = self._reader.GetOutput().GetSpacing()
 
         return [ extent[i] * spacing[i // 2] for i in range( 6 ) ]
+
+    ############################################################################
+
+    def setAnimationEnabled( self, enabled ):
+        """
+        Enables/disables the animation.
+        """
+        self._animationEnabled = enabled
+
+        if self._animationEnabled:
+            self._timer.start( 5_000 )
+            # self._renderWindow.Render()
+        else:
+            self._timer.stop()
 
     ############################################################################
 
@@ -1005,6 +1019,7 @@ class EEGScene( QObject ):
         self._shepard.SetModelBounds( self._contour.GetOutput().GetBounds() )
         self._shepard.SetSampleDimensions( 50, 50, 25 )
         self._shepard.SetMaximumDistance( 0.5 )
+        self._shepard.SetNullValue( 0.5 )
         self._shepard.SetPowerParameter( 2 )
 
         self._resample = vtkResampleWithDataSet()
