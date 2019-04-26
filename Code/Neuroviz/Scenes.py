@@ -7,17 +7,17 @@ from random import choice
 from PyQt5.QtCore import QObject, QTimer
 from PyQt5.QtWidgets import QApplication
 
-from vtk import (vtkActor, vtkBox, vtkCamera, vtkContourFilter,
-                 vtkExtractPolyDataGeometry, vtkFloatArray,
-                 vtkGenericDataObjectReader, vtkImageActor,
+from vtk import (vtkActor, vtkAxis, vtkBox, vtkCamera, vtkChartMatrix,
+                 vtkContextView, vtkContourFilter, vtkExtractPolyDataGeometry,
+                 vtkFloatArray, vtkGenericDataObjectReader, vtkImageActor,
                  vtkImageGaussianSmooth, vtkImageMapToColors, vtkImageReslice,
                  vtkInteractorStyleTrackballCamera, vtkLookupTable, vtkMath,
                  vtkMatrix4x4, vtkNamedColors, vtkOutlineFilter, vtkPlane,
                  vtkPointPicker, vtkPoints, vtkPolyData, vtkPolyDataMapper,
                  vtkPolyDataNormals, vtkRenderer, vtkResampleWithDataSet,
                  vtkScalarBarActor, vtkShepardMethod, vtkSphereSource,
-                 vtkStripper, vtkWindowedSincPolyDataFilter,
-                 vtkWorldPointPicker)
+                 vtkStripper, vtkTable, vtkVector2f, vtkVector2i,
+                 vtkWindowedSincPolyDataFilter, vtkWorldPointPicker)
 
 logger = getLogger( __name__ )
 
@@ -843,73 +843,17 @@ class EEGScene( QObject ):
         self._createContourActor()
         self._createScalarBarActor()
         self._createRendererAndInteractor()
+        self._createCharts()
 
         interactor = MouseInteractorAddElectrode( self._renderer, self._contourActor, self.addElectrode )
         self._interactor.SetInteractorStyle( interactor )
-
-        from math import sin, cos
-        from vtk import vtkChartXY, vtkContextView, vtkTable
-
-        self._chart = vtkChartXY()
-        self._view = vtkContextView()
-        self._view.GetRenderer().SetBackground( 1.0, 1.0, 1.0 )
-        self._view.GetScene().AddItem( self._chart )
-        self._view.SetRenderWindow( self._chartXYWindow )
-
-        ###
-
-        table = vtkTable()
-
-        arrX = vtkFloatArray()
-        arrX.SetName( "X Axis" )
-
-        arrC = vtkFloatArray()
-        arrC.SetName( "Cosine" )
-
-        arrS = vtkFloatArray()
-        arrS.SetName( "Sine" )
-
-        arrS2 = vtkFloatArray()
-        arrS2.SetName( "Sine2 ")
-
-        numPoints = 69
-        inc = 7.5 / (numPoints - 1)
-
-        for i in range( numPoints ):
-            arrX.InsertNextValue( i * inc )
-            arrC.InsertNextValue( cos(i * inc) + 0.0 )
-            arrS.InsertNextValue( sin(i * inc) + 0.0 )
-            arrS2.InsertNextValue( sin(i * inc) + 0.5 )
-
-        table.AddColumn( arrX )
-        table.AddColumn( arrC )
-        table.AddColumn( arrS )
-        table.AddColumn( arrS2 )
-
-        line = self._chart.AddPlot( 0 )
-        line.SetInputData( table, 0, 1 )
-        line.SetColor( 0, 255, 0, 255 )
-        line.SetWidth( 1.0 )
-
-        line = self._chart.AddPlot( 0 )
-        line.SetInputData( table, 0, 2 )
-        line.SetColor( 255, 0, 0, 255 )
-        line.SetWidth( 5.0 )
-
-        line = self._chart.AddPlot( 0 )
-        line.SetInputData( table, 0, 3 )
-        line.SetColor( 0, 0, 255, 255 )
-        line.SetWidth( 4.0 )
-
-        ###
-
-        self._chartXYWindow.Render()
 
         self._renderer.AddActor( self._outlineActor )
         self._renderer.AddActor( self._contourActor )
         self._renderer.AddActor2D( self._scalarBarActor )
         self._renderer.ResetCamera()
         self._renderWindow.Render()
+        self._chartXYWindow.Render()
 
     ############################################################################
 
@@ -967,10 +911,9 @@ class EEGScene( QObject ):
         self._animationEnabled = enabled
 
         if self._animationEnabled:
-            self._timer.start( 5_000 )
-            # self._renderWindow.Render()
-        else:
-            self._timer.stop()
+            self._updateInterval = self._settings.value( f"{__class__.__name__}/UpdateInterval", 5_000, type = int )
+            self._timer.start( self._updateInterval )
+        else: self._timer.stop()
 
     ############################################################################
 
@@ -1156,6 +1099,81 @@ class EEGScene( QObject ):
 
     ############################################################################
 
+    def _createCharts( self ):
+        """
+        Create charts that display the last 8 electrode values for each
+        electrode.
+        """
+        self._matrix = vtkChartMatrix()
+        self._matrix.SetSize( vtkVector2i( 4, 2 ) )
+        self._matrix.SetGutter( vtkVector2f( 30.0, 20.0 ) )
+
+        self._view = vtkContextView()
+        self._view.GetRenderer().SetBackground( 1.0, 1.0, 1.0 )
+        self._view.GetScene().AddItem( self._matrix )
+        self._view.SetRenderWindow( self._chartXYWindow )
+
+
+        self._electrodeValueTable = vtkTable()
+        columns = [vtkFloatArray() for _ in range( 9 )]
+
+        for i, column in enumerate( columns ):
+            column.SetName( f"Col{i}" )
+            self._electrodeValueTable.AddColumn( column )
+
+        numPoints = 8
+        self._electrodeValueTable.SetNumberOfRows( numPoints )
+
+        for i in range( numPoints ):
+            self._electrodeValueTable.SetValue( i, 0, i )
+            for j in range( 1, 9 ):
+                self._electrodeValueTable.SetValue( i, j, 0)
+
+        for j in reversed( range( 2 ) ):
+            for k in range( 4 ):
+                chart = self._matrix.GetChart( vtkVector2i( k, j ) )
+                chart.SetInteractive( False )
+
+                yAxis, xAxis = chart.GetAxis( 0 ), chart.GetAxis( 1 )
+
+                xAxis.SetRange( 0, numPoints )
+                xAxis.SetTitleVisible( False )
+                xAxis.SetBehavior( vtkAxis.FIXED )
+
+                yAxis.SetRange( 0, 1 )
+                yAxis.SetTitleVisible( False )
+                yAxis.SetBehavior( vtkAxis.FIXED )
+
+                line = chart.AddPlot( 0 )
+                line.SetInputData( self._electrodeValueTable, 0, 4 * (1 - j) + k + 1 )
+                line.SetWidth( 2.0 )
+
+    ############################################################################
+
+    def _updateCharts( self ):
+        """
+        """
+        numPoints = 8
+
+        # Shift the current values.
+        for i in range( numPoints - 1 ):
+            for j in range( 1, 9 ):
+                self._electrodeValueTable.SetValue( i, j, self._electrodeValueTable.GetValue( i + 1, j ) )
+
+        # Add the new values.
+        for j in range( 1, 9 ):
+            self._electrodeValueTable.SetValue( numPoints - 1, j, self._electrodeValues[ j - 1 ] )
+
+        # Update the charts.
+        for j in reversed( range( 2 ) ):
+            for k in range( 4 ):
+                chart = self._matrix.GetChart( vtkVector2i( k, j ) )
+                chart.ClearPlots()
+                line = chart.AddPlot( 0 )
+                line.SetInputData( self._electrodeValueTable, 0, 4 * (1 - j) + k + 1 )
+
+    ############################################################################
+
     def _onTimeout( self ):
         """
         On timeout, generate new random values for the electrodes and update
@@ -1168,6 +1186,10 @@ class EEGScene( QObject ):
         self._electrodeValues = [ choice( (0.0, 0.5, 1.0) ) for _ in range( len( self._electrodeActors ) ) ]
 
         self._interpolateContour()
+        self._updateCharts()
+
+        self._renderWindow.Render()
+        self._chartXYWindow.Render()
 
 ################################################################################
 ################################################################################
