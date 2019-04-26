@@ -844,6 +844,7 @@ class EEGScene( QObject ):
         self._createScalarBarActor()
         self._createRendererAndInteractor()
         self._createCharts()
+        self._readElectrodeChoices()
 
         interactor = MouseInteractorAddElectrode( self._renderer, self._contourActor, self.addElectrode )
         self._interactor.SetInteractorStyle( interactor )
@@ -877,7 +878,7 @@ class EEGScene( QObject ):
         if len( self._electrodeActors ) < 8:
             self._electrodeActors.append( self._sphereActor )
             self._electrodePositions.append( position )
-            self._electrodeValues.append( choice( (0.0, 0.5, 1.0) ) )
+            self._electrodeValues.append( choice( self._electrodeChoices ) )
             if len( self._electrodeActors ) == 8:
                 self._renderWindow.Render() # Show the actor before interpolating.
                 self._interpolateContour()
@@ -885,7 +886,7 @@ class EEGScene( QObject ):
             self._renderer.RemoveActor( self._electrodeActors[0] )
             self._electrodeActors = self._electrodeActors[1:] + [ self._sphereActor ]
             self._electrodePositions = self._electrodePositions[1:] + [ position ]
-            self._electrodeValues = self._electrodeValues[1:] + [ choice( (0.0, 0.5, 1.0) ) ]
+            self._electrodeValues = self._electrodeValues[1:] + [ choice( self._electrodeChoices ) ]
             self._renderWindow.Render() # Show the actor before interpolating.
             self._interpolateContour()
 
@@ -1119,10 +1120,10 @@ class EEGScene( QObject ):
             column.SetName( f"Col{i}" )
             self._electrodeValueTable.AddColumn( column )
 
-        numPoints = 8
-        self._electrodeValueTable.SetNumberOfRows( numPoints )
+        self._nSamples = self._settings.value( f"{__class__.__name__}/NSamples", 8, type = int )
+        self._electrodeValueTable.SetNumberOfRows( self._nSamples )
 
-        for i in range( numPoints ):
+        for i in range( self._nSamples ):
             self._electrodeValueTable.SetValue( i, 0, i )
             for j in range( 1, 9 ):
                 self._electrodeValueTable.SetValue( i, j, 0)
@@ -1134,7 +1135,7 @@ class EEGScene( QObject ):
 
                 yAxis, xAxis = chart.GetAxis( 0 ), chart.GetAxis( 1 )
 
-                xAxis.SetRange( 0, numPoints )
+                xAxis.SetRange( 0, self._nSamples )
                 xAxis.SetTitleVisible( False )
                 xAxis.SetBehavior( vtkAxis.FIXED )
 
@@ -1148,19 +1149,34 @@ class EEGScene( QObject ):
 
     ############################################################################
 
+    def _readElectrodeChoices( self ):
+        """
+        Read the possible electrode values from the settings.
+        """
+        self._electrodeChoices = self._settings.value( f"{__class__.__name__}/ElectrodeChoices", [0.0, 0.5, 1.0], type = list )
+
+        # Handle the empty and one-element list cases.
+        if not isinstance( self._electrodeChoices , list ):
+            if not self._readElectrodeChoices: return
+            self._electrodeChoices = (self._electrodeChoices,)
+
+        self._electrodeChoices = tuple( float( x ) for x in self._electrodeChoices )
+
+    ############################################################################
+
     def _updateCharts( self ):
         """
         """
-        numPoints = 8
+        nElectrodes = len( self._electrodeActors )
 
         # Shift the current values.
-        for i in range( numPoints - 1 ):
-            for j in range( 1, 9 ):
+        for i in range( self._nSamples - 1 ):
+            for j in range( 1, nElectrodes + 1 ):
                 self._electrodeValueTable.SetValue( i, j, self._electrodeValueTable.GetValue( i + 1, j ) )
 
         # Add the new values.
-        for j in range( 1, 9 ):
-            self._electrodeValueTable.SetValue( numPoints - 1, j, self._electrodeValues[ j - 1 ] )
+        for j in range( 1, nElectrodes + 1 ):
+            self._electrodeValueTable.SetValue( self._nSamples - 1, j, self._electrodeValues[ j - 1 ] )
 
         # Update the charts.
         for j in reversed( range( 2 ) ):
@@ -1183,13 +1199,13 @@ class EEGScene( QObject ):
 
         self._renderWindow.Render()
 
-        self._electrodeValues = [ choice( (0.0, 0.5, 1.0) ) for _ in range( len( self._electrodeActors ) ) ]
+        self._electrodeValues = [ choice( self._electrodeChoices ) for _ in range( len( self._electrodeActors ) ) ]
 
         self._interpolateContour()
-        # self._updateCharts()
+        self._updateCharts()
 
         self._renderWindow.Render()
-        # self._chartXYWindow.Render()
+        self._chartXYWindow.Render()
 
 ################################################################################
 ################################################################################
