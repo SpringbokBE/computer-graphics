@@ -109,15 +109,21 @@ class EEGWidget( QWidget ):
     def _createLayout( self ):
         """
         """
-        self._labelAnimation = QLabel( "Animation", self )
+        self.sliderGroupAnimations = SliderGroup( "Animations", self )
+        self.sliderGroupAnimations.setText( "Update interval" )
 
-        self._checkBoxAnimation = QCheckBox( "Enabled", self )
+        self._groupBoxAnimations = QGroupBox( "Animations", self )
+        self._groupBoxAnimations.setFlat( True )
 
         self._spacerItem = QSpacerItem( 20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding )
 
+        groupBoxAnimationsLayout = QVBoxLayout()
+        groupBoxAnimationsLayout.addWidget( self.sliderGroupAnimations )
+
+        self._groupBoxAnimations.setLayout( groupBoxAnimationsLayout )
+
         verticalLayout = QVBoxLayout()
-        verticalLayout.addWidget( self._labelAnimation )
-        verticalLayout.addWidget( self._checkBoxAnimation )
+        verticalLayout.addWidget( self._groupBoxAnimations )
         verticalLayout.addItem( self._spacerItem )
         self.setLayout( verticalLayout )
 
