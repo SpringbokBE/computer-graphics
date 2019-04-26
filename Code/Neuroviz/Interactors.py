@@ -1,9 +1,9 @@
 from logging import getLogger
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (QApplication, QComboBox, QGroupBox, QLabel,
-                             QSizePolicy, QSlider, QSpacerItem, QVBoxLayout,
-                             QWidget)
+from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox, QGroupBox,
+                             QLabel, QSizePolicy, QSlider, QSpacerItem,
+                             QVBoxLayout, QWidget)
 
 from Neuroviz.UiComponents import SliderGroup
 
@@ -81,6 +81,43 @@ class BasicWidget( QWidget ):
         verticalLayout.addWidget( self._labelOpacity )
         verticalLayout.addWidget( self.sliderOpacity )
         verticalLayout.addWidget( self._groupBoxSliders )
+        verticalLayout.addItem( self._spacerItem )
+        self.setLayout( verticalLayout )
+
+################################################################################
+################################################################################
+
+class EEGWidget( QWidget ):
+
+    ############################################################################
+
+    def __init__( self, dockWidget, *args, **kwargs ):
+        """
+        """
+        logger.info( f"Creating {__class__.__name__}..." )
+
+        self._settings = QApplication.instance().settings
+
+        super().__init__( *args, **kwargs )
+
+        self._createLayout()
+
+        dockWidget.setWidget( self )
+
+    ############################################################################
+
+    def _createLayout( self ):
+        """
+        """
+        self._labelAnimation = QLabel( "Animation", self )
+
+        self._checkBoxAnimation = QCheckBox( "Enabled", self )
+
+        self._spacerItem = QSpacerItem( 20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding )
+
+        verticalLayout = QVBoxLayout()
+        verticalLayout.addWidget( self._labelAnimation )
+        verticalLayout.addWidget( self._checkBoxAnimation )
         verticalLayout.addItem( self._spacerItem )
         self.setLayout( verticalLayout )
 

@@ -3,7 +3,7 @@ from logging import getLogger
 from PyQt5.QtCore import QObject, QTimer, pyqtSlot
 from PyQt5.QtWidgets import QApplication
 
-from Neuroviz.Interactors import BasicWidget
+from Neuroviz.Interactors import BasicWidget, EEGWidget
 from Neuroviz.Scenes import BasicScene, EEGScene
 
 logger = getLogger( __name__ )
@@ -209,6 +209,35 @@ class EEGSceneAndInteractor( QObject ):
         self._settings = QApplication.instance().settings
 
         self._scene = EEGScene( ui.qvtkEEG.GetRenderWindow() )
+        self._interactor = EEGWidget( ui.qdwDock )
+
+        self._updateSceneFromInteractor()
+        self._connectSignalsToSlots()
+
+    ############################################################################
+
+    def _updateSceneFromInteractor( self ):
+        """
+        Update the scene with information from the interactor.
+        """
+        self._scene.setAnimationEnabled( self._interactor._checkBoxAnimation.isChecked() )
+
+    ############################################################################
+
+    def _connectSignalsToSlots( self ):
+        """
+        Connect all signals to their slots.
+        """
+        self._interactor._checkBoxAnimation.stateChanged.connect( self._onCheckBoxAnimationStateChanged )
+
+    ############################################################################
+
+    @pyqtSlot( int )
+    def _onCheckBoxAnimationStateChanged( self, state ):
+        """
+        When the animation checkbox has changed state.
+        """
+        self._scene.setAnimationEnabled( state )
 
 ################################################################################
 ################################################################################
