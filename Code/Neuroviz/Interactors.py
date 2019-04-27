@@ -23,13 +23,20 @@ class BasicWidget( QWidget ):
         """
         logger.info( f"Creating {__class__.__name__}..." )
 
+        self._dockWidget = dockWidget
         self._settings = QApplication.instance().settings
 
         super().__init__( *args, **kwargs )
 
         self._createLayout()
 
-        dockWidget.setWidget( self )
+    ############################################################################
+
+    def activate( self ):
+        """
+        Activate the interactor widget.
+        """
+        self._dockWidget.setWidget( self )
 
     ############################################################################
 
@@ -96,13 +103,20 @@ class EEGWidget( QWidget ):
         """
         logger.info( f"Creating {__class__.__name__}..." )
 
+        self._dockWidget = dockWidget
         self._settings = QApplication.instance().settings
 
         super().__init__( *args, **kwargs )
 
         self._createLayout()
 
-        dockWidget.setWidget( self )
+    ############################################################################
+
+    def activate( self ):
+        """
+        Activate the interactor widget.
+        """
+        self._dockWidget.setWidget( self )
 
     ############################################################################
 
