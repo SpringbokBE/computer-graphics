@@ -35,6 +35,14 @@ class BasicSceneAndInteractor( QObject ):
 
     ############################################################################
 
+    def activate( self ):
+        """
+        Activate the (scene and) interactor.
+        """
+        self._interactor.activate()
+
+    ############################################################################
+
     def _updateInteractorFromScene( self ):
         """
         Update the interactor with information from the scene.
@@ -216,6 +224,14 @@ class EEGSceneAndInteractor( QObject ):
 
         self._interactor.sliderGroupAnimations.setRange( 200, 10_000 )
 
+    ############################################################################
+
+    def activate( self ):
+        """
+        Activate the (scene and) interactor.
+        """
+        self._interactor.activate()
+        
     ############################################################################
 
     def _updateSceneFromInteractor( self ):
