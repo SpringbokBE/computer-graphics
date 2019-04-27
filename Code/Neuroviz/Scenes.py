@@ -1110,7 +1110,7 @@ class EEGScene( QObject ):
         """
         self._matrix = vtkChartMatrix()
         self._matrix.SetSize( vtkVector2i( 4, 2 ) )
-        self._matrix.SetGutter( vtkVector2f( 30.0, 20.0 ) )
+        self._matrix.SetGutter( vtkVector2f( 30.0, 30.0 ) )
 
         self._view = vtkContextView()
         self._view.GetRenderer().SetBackground( 1.0, 1.0, 1.0 )
@@ -1141,7 +1141,7 @@ class EEGScene( QObject ):
                 yAxis, xAxis = chart.GetAxis( 0 ), chart.GetAxis( 1 )
 
                 xAxis.SetRange( 0, self._nSamples )
-                xAxis.SetTitleVisible( False )
+                xAxis.SetTitle( f"Electrode {4 * (1 - j) + k + 1}" )
                 xAxis.SetBehavior( vtkAxis.FIXED )
 
                 yAxis.SetRange( 0, 1 )
