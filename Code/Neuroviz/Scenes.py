@@ -9,14 +9,15 @@ from PyQt5.QtWidgets import QApplication
 
 from vtk import (vtkActor, vtkAxis, vtkBox, vtkCamera, vtkChartMatrix,
                  vtkContextView, vtkContourFilter, vtkExtractPolyDataGeometry,
-                 vtkFloatArray, vtkGenericDataObjectReader, vtkImageActor,
-                 vtkImageGaussianSmooth, vtkImageMapToColors, vtkImageReslice,
-                 vtkInteractorStyleTrackballCamera, vtkLookupTable, vtkMath,
-                 vtkMatrix4x4, vtkNamedColors, vtkOutlineFilter, vtkPlane,
-                 vtkPointPicker, vtkPoints, vtkPolyData, vtkPolyDataMapper,
-                 vtkPolyDataNormals, vtkRenderer, vtkResampleWithDataSet,
-                 vtkScalarBarActor, vtkShepardMethod, vtkSphereSource,
-                 vtkStripper, vtkTable, vtkVector2f, vtkVector2i,
+                 vtkFloatArray, vtkFollower, vtkGenericDataObjectReader,
+                 vtkImageActor, vtkImageGaussianSmooth, vtkImageMapToColors,
+                 vtkImageReslice, vtkInteractorStyleTrackballCamera,
+                 vtkLookupTable, vtkMath, vtkMatrix4x4, vtkNamedColors,
+                 vtkOutlineFilter, vtkPlane, vtkPointPicker, vtkPoints,
+                 vtkPolyData, vtkPolyDataMapper, vtkPolyDataNormals,
+                 vtkRenderer, vtkResampleWithDataSet, vtkScalarBarActor,
+                 vtkShepardMethod, vtkSphereSource, vtkStripper, vtkTable,
+                 vtkVector2f, vtkVector2i, vtkVectorText,
                  vtkWindowedSincPolyDataFilter, vtkWorldPointPicker)
 
 logger = getLogger( __name__ )
@@ -845,6 +846,7 @@ class EEGScene( QObject ):
         self._createRendererAndInteractor()
         self._createCharts()
         self._readElectrodeChoices()
+        self._createElectrodeTextActors()
 
         interactor = MouseInteractorAddElectrode( self._renderer, self._contourActor, self.addElectrode )
         self._interactor.SetInteractorStyle( interactor )
@@ -879,17 +881,20 @@ class EEGScene( QObject ):
             self._electrodeActors.append( self._sphereActor )
             self._electrodePositions.append( position )
             self._electrodeValues.append( choice( self._electrodeChoices ) )
-            if len( self._electrodeActors ) == 8:
-                self._renderWindow.Render() # Show the actor before interpolating.
-                self._interpolateContour()
+            self._renderer.AddActor( self._electrodeTextActors[ len( self._electrodeActors ) - 1 ] )
         else:
             self._renderer.RemoveActor( self._electrodeActors[0] )
             self._electrodeActors = self._electrodeActors[1:] + [ self._sphereActor ]
             self._electrodePositions = self._electrodePositions[1:] + [ position ]
             self._electrodeValues = self._electrodeValues[1:] + [ choice( self._electrodeChoices ) ]
-            self._renderWindow.Render() # Show the actor before interpolating.
-            self._interpolateContour()
 
+        # Update the electrode text positions.
+        for i, text in enumerate( self._electrodeTextActors ):
+            pos = self._electrodePositions[i]
+            text.SetPosition( pos[0] - 10, pos[1] - 10, pos[2] + 10 )
+
+        self._renderWindow.Render() # Show the actor before interpolating.
+        self._interpolateContour()
         self._renderWindow.Render()
 
     ############################################################################
@@ -1161,6 +1166,25 @@ class EEGScene( QObject ):
             self._electrodeChoices = (self._electrodeChoices,)
 
         self._electrodeChoices = tuple( float( x ) for x in self._electrodeChoices )
+
+    ############################################################################
+
+    def _createElectrodeTextActors( self ):
+        """
+
+        """
+        self._electrodeTextActors = [ vtkFollower() for _ in range( 8 ) ]
+
+        for i, actor in enumerate( self._electrodeTextActors ):
+            textSource = vtkVectorText()
+            textSource.SetText( f"{i + 1}" )
+
+            textMapper = vtkPolyDataMapper()
+            textMapper.SetInputConnection( textSource.GetOutputPort() )
+
+            actor.SetMapper( textMapper )
+            actor.SetScale( 10 )
+            actor.SetCamera( self._renderer.GetActiveCamera() )
 
     ############################################################################
 
