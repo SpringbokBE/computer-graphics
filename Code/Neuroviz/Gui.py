@@ -4,6 +4,7 @@ from logging import getLogger
 from os import getcwd
 from os.path import basename, isfile, normpath, relpath, splitext
 
+from PyQt5.QtCore import pyqtSlot
 from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.uic import compileUi
 
@@ -31,8 +32,16 @@ class Gui( QMainWindow ):
         self._ui = self._recompileUi()
         self._ui.setupUi( self )
 
-        # self._basicSceneInteractor = BasicSceneAndInteractor( self._ui )
-        self._eegSceneInteractor = EEGSceneAndInteractor( self._ui )
+        self._scenesAndInteractors = [None for _ in range( 3 )]
+
+        self._ui.tabWidget.currentChanged.connect( self._onTabWidgetCurrentChanged )
+
+        if self._settings.value( f"{__class__.__name__}/Preload", False, type = bool ):
+            self._scenesAndInteractors[0] = BasicSceneAndInteractor( self._ui )
+            self._scenesAndInteractors[1] = EEGSceneAndInteractor( self._ui )
+
+        # Initialize the scene in the active tab.
+        self._onTabWidgetCurrentChanged( self._ui.tabWidget.currentIndex() )
 
         self.show()
 
@@ -78,6 +87,22 @@ class Gui( QMainWindow ):
 
         module = "Neuroviz." + splitext( basename( self._sPyFileName ) )[0]
         return getattr( import_module( module ), self._sUiClassName )()
+
+    ############################################################################
+
+    @pyqtSlot( int )
+    def _onTabWidgetCurrentChanged( self, index ):
+        """
+        When a different visualization tab has been selected.
+        """
+        if index == 0:
+            if not self._scenesAndInteractors[0]:
+                self._scenesAndInteractors[0] = BasicSceneAndInteractor( self._ui )
+            self._scenesAndInteractors[0].activate()
+        elif index == 1:
+            if not self._scenesAndInteractors[1]:
+                self._scenesAndInteractors[1] = EEGSceneAndInteractor( self._ui )
+            self._scenesAndInteractors[1].activate()
 
     ############################################################################
 
