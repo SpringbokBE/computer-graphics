@@ -887,11 +887,11 @@ class EEGScene( QObject ):
             self._electrodeActors = self._electrodeActors[1:] + [ self._sphereActor ]
             self._electrodePositions = self._electrodePositions[1:] + [ position ]
             self._electrodeValues = self._electrodeValues[1:] + [ choice( self._electrodeChoices ) ]
+            self._clearCharts()
 
         # Update the electrode text positions.
-        for i, text in enumerate( self._electrodeTextActors ):
-            pos = self._electrodePositions[i]
-            text.SetPosition( pos[0] - 10, pos[1] - 10, pos[2] + 10 )
+        for i, pos in enumerate( self._electrodePositions ):
+            self._electrodeTextActors[i].SetPosition( pos[0] - 10, pos[1] - 10, pos[2] + 10 )
 
         self._renderWindow.Render() # Show the actor before interpolating.
         self._interpolateContour()
@@ -1209,6 +1209,17 @@ class EEGScene( QObject ):
                 chart.ClearPlots()
                 line = chart.AddPlot( 0 )
                 line.SetInputData( self._electrodeValueTable, 0, 4 * (1 - j) + k + 1 )
+
+    ############################################################################
+
+    def _clearCharts( self ):
+        """
+        Clear the charts.
+        """
+        for i in range( self._nSamples ):
+            self._electrodeValueTable.SetValue( i, 0, i )
+            for j in range( 1, 9 ):
+                self._electrodeValueTable.SetValue( i, j, 0)
 
     ############################################################################
 
