@@ -1,10 +1,11 @@
+from glob import glob
 from logging import getLogger
 
 from PyQt5.QtCore import QObject, QTimer, pyqtSlot
 from PyQt5.QtWidgets import QApplication
 
-from Neuroviz.Interactors import BasicWidget, EEGWidget
-from Neuroviz.Scenes import BasicScene, EEGScene
+from Neuroviz.Interactors import BasicWidget, DSAWidget, EEGWidget
+from Neuroviz.Scenes import BasicScene, DSAScene, EEGScene
 
 logger = getLogger( __name__ )
 
@@ -231,7 +232,7 @@ class EEGSceneAndInteractor( QObject ):
         Activate the (scene and) interactor.
         """
         self._interactor.activate()
-        
+
     ############################################################################
 
     def _updateSceneFromInteractor( self ):
@@ -270,6 +271,184 @@ class EEGSceneAndInteractor( QObject ):
         When the animation slider group value has changed.
         """
         self._scene.setUpdateInterval( value )
+
+################################################################################
+################################################################################
+
+class DSASceneAndInteractor( QObject ):
+
+    ############################################################################
+
+    def __init__( self, ui, *args, **kwargs ):
+        """
+        Initialize the scene and interactor (widget) and connect all signals
+        to their respective slots.
+        """
+        logger.info( f"Creating {__class__.__name__}..." )
+
+        super().__init__( *args, **kwargs )
+
+        self._settings = QApplication.instance().settings
+
+        self._scene = DSAScene( ui.qvtkDSA.GetRenderWindow() )
+        self._interactor = DSAWidget( ui.qdwDock )
+
+        self._initializeInteractor()
+        self._updateSceneFromInteractor()
+        self._connectSignalsToSlots()
+
+    ############################################################################
+
+    def activate( self ):
+        """
+        Activate the (scene and) interactor.
+        """
+        self._interactor.activate()
+
+    ############################################################################
+
+    def _initializeInteractor( self ):
+        """
+        """
+        dataSetName = self._settings.value( f"{__class__.__name__}/DataSetName", "", type = str )
+
+        self._dataSetNames = sorted( glob( dataSetName ) )
+
+        for dataSet in self._dataSetNames:
+            self._interactor.comboBoxDataSet.addItem( dataSet.split( "/" )[-1] )
+
+    ############################################################################
+
+    def _updateSceneFromInteractor( self ):
+        """
+        Update the scene with information from the interactor.
+        """
+        hueMultiplier = self._settings.value( f"{__class__.__name__}/HueMultiplier", 0.85, type = float )
+        hueConstant = self._settings.value( f"{__class__.__name__}/HueConstant", 0.1, type = float )
+        valueMultiplier = self._settings.value( f"{__class__.__name__}/ValueMultiplier", 0.85, type = float )
+
+        self._interactor.spinBoxHueMultiplier.setValue( hueMultiplier )
+        self._interactor.spinBoxHueConstant.setValue( hueConstant )
+        self._interactor.spinBoxValueMultiplier.setValue( valueMultiplier )
+
+        self._scene.hueMultiplier = hueMultiplier
+        self._scene.hueConstant = hueConstant
+        self._scene.valueMultiplier = valueMultiplier
+
+        self._scene.readDataSet( self._dataSetNames[self._interactor.comboBoxDataSet.currentIndex()] )
+        self._scene.calculateRGBImage()
+        self._scene.showRGBImage()
+
+    ############################################################################
+
+    def _connectSignalsToSlots( self ):
+        """
+        Connect all signals to their slots.
+        """
+        self._interactor.comboBoxDataSet.activated.connect( self._onComboBoxDataSetActivated )
+
+        self._interactor.spinBoxHueMultiplier.valueChanged.connect( self._onSpinBoxHueMultiplierValueChanged )
+        self._interactor.spinBoxHueConstant.valueChanged.connect( self._onSpinBoxHueConstantValueChanged )
+        self._interactor.spinBoxValueMultiplier.valueChanged.connect( self._onSpinBoxValueMultiplierValueChanged )
+
+        self._spinBoxHueMultiplierTimer = QTimer()
+        self._spinBoxHueMultiplierTimer.setSingleShot( True )
+        self._spinBoxHueMultiplierTimer.timeout.connect( self._onSpinBoxHueMultiplierTimeout )
+
+        self._spinBoxHueConstantTimer = QTimer()
+        self._spinBoxHueConstantTimer.setSingleShot( True )
+        self._spinBoxHueConstantTimer.timeout.connect( self._onSpinBoxHueConstantTimeout )
+
+        self._spinBoxValueMultiplierTimer = QTimer()
+        self._spinBoxValueMultiplierTimer.setSingleShot( True )
+        self._spinBoxValueMultiplierTimer.timeout.connect( self._onSpinBoxValueMultiplierTimeout )
+
+    ############################################################################
+
+    @pyqtSlot( int )
+    def _onComboBoxDataSetActivated( self, index ):
+        """
+        """
+        logger.debug( f"_onComboBoxDataSetActivated()" )
+
+        self._scene.readDataSet( self._dataSetNames[index] )
+        self._scene.calculateRGBImage()
+        self._scene.showRGBImage()
+
+    ############################################################################
+
+    @pyqtSlot( float )
+    def _onSpinBoxHueMultiplierValueChanged( self, _ ):
+        """
+        """
+        logger.debug( f"_onSpinBoxHueMultiplierValueChanged()" )
+        self._spinBoxHueMultiplierTimer.start( 1_000 )
+
+    ############################################################################
+
+    @pyqtSlot()
+    def _onSpinBoxHueMultiplierTimeout( self ):
+        """
+        """
+        logger.debug( f"_onSpinBoxHueMultiplierTimeout()" )
+
+        value = self._interactor.spinBoxHueMultiplier.value()
+
+        self._scene.hueMultiplier = value
+        self._scene.calculateRGBImage()
+        self._scene.showRGBImage()
+
+        self._settings.setValue( f"{__class__.__name__}/HueMultiplier", value )
+
+    ############################################################################
+
+    @pyqtSlot( float )
+    def _onSpinBoxHueConstantValueChanged( self, _ ):
+        """
+        """
+        logger.debug( f"_onSpinBoxHueConstantValueChanged()" )
+        self._spinBoxHueConstantTimer.start( 1_000 )
+
+    ############################################################################
+
+    @pyqtSlot()
+    def _onSpinBoxHueConstantTimeout( self ):
+        """
+        """
+        logger.debug( f"_onSpinBoxHueConstantTimeout()" )
+
+        value = self._interactor.spinBoxHueConstant.value()
+
+        self._scene.hueConstant = value
+        self._scene.calculateRGBImage()
+        self._scene.showRGBImage()
+
+        self._settings.setValue( f"{__class__.__name__}/HueConstant", value )
+
+    ############################################################################
+
+    @pyqtSlot( float )
+    def _onSpinBoxValueMultiplierValueChanged( self, _ ):
+        """
+        """
+        logger.debug( f"_onSpinBoxValueMultiplierValueChanged()" )
+        self._spinBoxValueMultiplierTimer.start( 1_000 )
+
+    ############################################################################
+
+    @pyqtSlot()
+    def _onSpinBoxValueMultiplierTimeout( self ):
+        """
+        """
+        logger.debug( f"_onSpinBoxValueMultiplierTimeout()" )
+
+        value = self._interactor.spinBoxValueMultiplier.value()
+
+        self._scene.valueMultiplier = value
+        self._scene.calculateRGBImage()
+        self._scene.showRGBImage()
+
+        self._settings.setValue( f"{__class__.__name__}/ValueMultiplier", value )
 
 ################################################################################
 ################################################################################
