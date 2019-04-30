@@ -1,24 +1,32 @@
+from glob import glob
 from logging import getLogger
 from math import sqrt
 from os import getcwd
 from os.path import isfile, realpath
 from random import choice
 
+import numpy as np
+from matplotlib.colors import hsv_to_rgb
+from matplotlib.image import imread
 from PyQt5.QtCore import QObject, QTimer
 from PyQt5.QtWidgets import QApplication
 
-from vtk import (vtkActor, vtkAxis, vtkBox, vtkCamera, vtkChartMatrix,
-                 vtkContextView, vtkContourFilter, vtkExtractPolyDataGeometry,
-                 vtkFloatArray, vtkFollower, vtkGenericDataObjectReader,
-                 vtkImageActor, vtkImageGaussianSmooth, vtkImageMapToColors,
-                 vtkImageReslice, vtkInteractorStyleTrackballCamera,
-                 vtkLookupTable, vtkMath, vtkMatrix4x4, vtkNamedColors,
-                 vtkOutlineFilter, vtkPlane, vtkPointPicker, vtkPoints,
-                 vtkPolyData, vtkPolyDataMapper, vtkPolyDataNormals,
-                 vtkRenderer, vtkResampleWithDataSet, vtkScalarBarActor,
-                 vtkShepardMethod, vtkSphereSource, vtkStripper, vtkTable,
-                 vtkVector2f, vtkVector2i, vtkVectorText,
-                 vtkWindowedSincPolyDataFilter, vtkWorldPointPicker)
+from vtk import (vtkActor, vtkActor2D, vtkAxis, vtkBox, vtkCamera,
+                 vtkChartMatrix, vtkContextView, vtkContourFilter,
+                 vtkExtractPolyDataGeometry, vtkFloatArray, vtkFollower,
+                 vtkGenericDataObjectReader, vtkImageActor, vtkImageData,
+                 vtkImageGaussianSmooth, vtkImageMapper, vtkImageMapToColors,
+                 vtkImageResample, vtkImageReslice,
+                 vtkInteractorStyleTrackballCamera, vtkLookupTable, vtkMath,
+                 vtkMatrix4x4, vtkNamedColors, vtkOutlineFilter, vtkPlane,
+                 vtkPNGReader, vtkPointPicker, vtkPoints, vtkPolyData,
+                 vtkPolyDataMapper, vtkPolyDataNormals, vtkRenderer,
+                 vtkRenderWindow, vtkRenderWindowInteractor,
+                 vtkResampleWithDataSet, vtkScalarBarActor, vtkShepardMethod,
+                 vtkSphereSource, vtkStripper, vtkTable, vtkVector2f,
+                 vtkVector2i, vtkVectorText, vtkWindowedSincPolyDataFilter,
+                 vtkWorldPointPicker)
+from vtk.util.numpy_support import numpy_to_vtk
 
 logger = getLogger( __name__ )
 
@@ -1103,6 +1111,18 @@ class EEGScene( QObject ):
 
     ############################################################################
 
+    def _createEmptyRenderer( self ):
+        """
+        Creates an empty renderer for the scene.
+        """
+        self._renderer = vtkRenderer()
+        self._renderer.SetBackground( self._colors.GetColor3d( "Background" ) )
+
+        self._renderWindow.AddRenderer( self._renderer )
+        self._renderWindow.Render()
+
+    ############################################################################
+
     def _createCharts( self ):
         """
         Create charts that display the last 8 electrode values for each
@@ -1309,6 +1329,153 @@ class MouseInteractorAddElectrode( vtkInteractorStyleTrackballCamera ):
         xyz = worldPicker.GetPickPosition()
 
         self._callback( xyz )
+
+################################################################################
+################################################################################
+
+class DSAScene( QObject ):
+
+    ############################################################################
+
+    def __init__( self, renderWindow, *args, **kwargs ):
+        """
+        """
+        logger.info( f"Creating {__class__.__name__}..." )
+
+        super().__init__( *args, **kwargs )
+
+        self._renderWindow = renderWindow
+        self._settings = QApplication.instance().settings
+
+        self._initializeScene()
+        self._interactor.Start()
+
+    ############################################################################
+
+    def readDataSet( self, fileName = None ):
+        """
+        Reads the files pointed to by the fileName. Uses glob.
+        """
+        # IMPORTANT!: Glob does not sort the images by default.
+        self._input = sorted( glob( f"{fileName}/*.png" ) )
+
+        if not self._input:
+            logger.info( f"Unable to read files {fileName}! Creating empty renderer." )
+            self._createNamedColors()
+            self._createEmptyRenderer()
+            return False
+
+        logger.info( f"Files {fileName} read succesfully!" )
+
+        # Specify the dimensions.
+        self._xLen, self._yLen = np.shape( imread( self._input[0] ) )[:2]
+        self._zLen = len( self._input )
+        self._volume = np.empty( (self._xLen, self._yLen, self._zLen) )
+        self.hueMultiplier, self.hueConstant, self.valueMultiplier = 1, 0, 1
+
+        # Read in the (inverted) image slices as a volume.
+        for i, file in enumerate( self._input ): self._volume[..., i] = 1 - imread( file )
+
+        return True
+
+    ############################################################################
+
+    def _initializeScene( self ):
+        """
+        """
+        self._image = vtkImageData()
+        self._scaledImage = vtkImageResample()
+
+        self._imageMapper = vtkImageMapper()
+        self._imageMapper.SetColorWindow( 1.0 )
+        self._imageMapper.SetColorLevel( 0.5 )
+
+        self._imageActor = vtkActor2D()
+        self._imageActor.SetMapper( self._imageMapper )
+
+        self._renderer = vtkRenderer()
+        self._renderer.AddActor( self._imageActor )
+        self._interactor = self._renderWindow.GetInteractor()
+
+        self._renderWindow.AddRenderer( self._renderer )
+
+        self._interactor.Initialize()
+        self._interactor.Start()
+
+    ############################################################################
+
+    def calculateRGBImage( self ):
+        """
+        """
+        logger.debug( f"calculateRGBImage()" )
+
+        sumVolume = np.add.reduce( self._volume, axis = 2 )
+        sumVolume[sumVolume == 0] = 1
+        sumVolumeX = np.repeat( sumVolume[..., np.newaxis], self._zLen, axis = 2 )
+
+        cubic = np.power( np.divide( self._volume, sumVolumeX ), 3 )
+
+        sumCubic = np.add.reduce( cubic, axis = 2 )
+        sumCubic[sumCubic == 0] = 1
+        sumCubicX = np.repeat( sumCubic[..., np.newaxis], self._zLen, axis = 2 )
+
+        linSpace = np.tile( np.linspace( 0.0, 1.0, num = self._zLen ), (1024, 1024, 1))
+
+        mean = np.add.reduce( self._volume, 2 ) / self._zLen
+        xMinusMu = np.subtract( self._volume, np.repeat( mean[..., np.newaxis], self._zLen, axis = 2 ) )
+        stdev = np.sqrt( np.add.reduce( np.square( xMinusMu ), axis = 2 ) )
+
+        self._hue = np.add.reduce( np.multiply( linSpace , np.divide( cubic, sumCubicX ) ) , axis = 2 )
+        self._sat = np.ones( (self._xLen, self._yLen) )
+        self._val = stdev / np.amax( stdev )
+
+        self._hue = self.hueMultiplier * self._hue - self.hueConstant
+        self._val = self.valueMultiplier * self._val
+
+        self._rgbImage = hsv_to_rgb( np.dstack( (self._hue, self._sat, self._val) ) )
+        self._rgbImage[self._rgbImage > 1] = 1
+
+    ############################################################################
+
+    def showRGBImage( self ):
+        """
+        """
+        logger.debug( f"showRGBImage()" )
+
+        self._vtkArr = numpy_to_vtk( np.flip( self._rgbImage.swapaxes( 0, 1 ), axis = 1 ).reshape( (-1, 3), order = "F" ) )
+
+        self._image.SetDimensions( self._yLen, self._xLen, 1 )
+        self._image.GetPointData().SetScalars( self._vtkArr )
+
+        self._scaledImage.SetInputData( self._image )
+        self._scaledImage.SetAxisMagnificationFactor( 0, 0.5 )
+        self._scaledImage.SetAxisMagnificationFactor( 1, 0.5 )
+        self._scaledImage.Update()
+
+        self._imageMapper.SetInputData( self._scaledImage.GetOutput() )
+
+        self._renderWindow.Render()
+
+    ############################################################################
+
+    def _createNamedColors( self ):
+        """
+        Creates named colors for convenience.
+        """
+        self._colors = vtkNamedColors()
+        self._colors.SetColor( "Background", (0.1000, 0.1000, 0.2000, 1.0000) )
+
+    ############################################################################
+
+    def _createEmptyRenderer( self ):
+        """
+        Creates an empty renderer for the scene.
+        """
+        self._renderer = vtkRenderer()
+        self._renderer.SetBackground( self._colors.GetColor3d( "Background" ) )
+
+        self._renderWindow.AddRenderer( self._renderer )
+        self._renderWindow.Render()
 
 ################################################################################
 ################################################################################
