@@ -9,6 +9,7 @@ from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.uic import compileUi
 
 from Neuroviz.SceneAndInteractors import (BasicSceneAndInteractor,
+                                          DSASceneAndInteractor,
                                           EEGSceneAndInteractor)
 
 logger = getLogger( __name__ )
@@ -39,6 +40,7 @@ class Gui( QMainWindow ):
         if self._settings.value( f"{__class__.__name__}/Preload", False, type = bool ):
             self._scenesAndInteractors[0] = BasicSceneAndInteractor( self._ui )
             self._scenesAndInteractors[1] = EEGSceneAndInteractor( self._ui )
+            self._scenesAndInteractors[2] = DSASceneAndInteractor( self._ui )
 
         # Initialize the scene in the active tab.
         self._onTabWidgetCurrentChanged( self._ui.tabWidget.currentIndex() )
@@ -103,6 +105,10 @@ class Gui( QMainWindow ):
             if not self._scenesAndInteractors[1]:
                 self._scenesAndInteractors[1] = EEGSceneAndInteractor( self._ui )
             self._scenesAndInteractors[1].activate()
+        elif index == 2:
+            if not self._scenesAndInteractors[2]:
+                self._scenesAndInteractors[2] = DSASceneAndInteractor( self._ui )
+            self._scenesAndInteractors[2].activate()
 
     ############################################################################
 
