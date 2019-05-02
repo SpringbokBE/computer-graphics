@@ -1,7 +1,7 @@
 """
 File name:  Scenes.py
 Author:     Gerbrand De Laender, Toon Dilissen, Peter Vercoutter
-Date:       01/05/2019
+Date:       02/05/2019
 Email:      gerbrand.delaender@ugent.be, toon.dilissen@ugent.be,
             peter.vercoutter@ugent.be
 Brief:      E016712, Project, Neuroviz
@@ -21,7 +21,7 @@ from random import choice
 import numpy as np
 from matplotlib.colors import hsv_to_rgb
 from matplotlib.image import imread
-from PyQt5.QtCore import QObject, QTimer
+from PyQt5.QtCore import QObject, QTimer, pyqtSignal
 from PyQt5.QtWidgets import QApplication
 
 from vtk import (vtkActor, vtkActor2D, vtkAxis, vtkBox, vtkCamera,
@@ -29,7 +29,7 @@ from vtk import (vtkActor, vtkActor2D, vtkAxis, vtkBox, vtkCamera,
                  vtkExtractPolyDataGeometry, vtkFloatArray, vtkFollower,
                  vtkGenericDataObjectReader, vtkImageActor, vtkImageData,
                  vtkImageGaussianSmooth, vtkImageMapper, vtkImageMapToColors,
-                 vtkImageResample, vtkImageReslice,
+                 vtkImageResample, vtkImageReslice, vtkInteractorStyleImage,
                  vtkInteractorStyleTrackballCamera, vtkLookupTable, vtkMath,
                  vtkMatrix4x4, vtkNamedColors, vtkOutlineFilter, vtkPlane,
                  vtkPointPicker, vtkPoints, vtkPolyData, vtkPolyDataMapper,
@@ -1408,6 +1408,10 @@ class DSAScene( QObject ):
 
     ############################################################################
 
+    huePicked = pyqtSignal( float, float )
+
+    ############################################################################
+
     def __init__( self, renderWindow, *args, **kwargs ):
         """
         Initializes the "DSA" scene and its attributes.
@@ -1421,6 +1425,8 @@ class DSAScene( QObject ):
 
         self._initializeScene()
         self._interactor.Start()
+
+        self._pickedHueValues = []
 
     ############################################################################
 
@@ -1444,13 +1450,22 @@ class DSAScene( QObject ):
         self._xLen, self._yLen = np.shape( imread( self._input[0] ) )[:2]
         self._zLen = len( self._input )
         self._volume = np.empty( (self._xLen, self._yLen, self._zLen) )
-        self.hueMultiplier, self.hueConstant, self.valueMultiplier = 1, 0, 1
 
         # Read in the (inverted) image slices as a volume.
         for i, file in enumerate( self._input ):
             self._volume[..., i] = 1 - imread( file )
 
         return True
+
+    ############################################################################
+
+    def setParameters( self, hueMultiplier = None, hueConstant = None, valueMultiplier = None ):
+        """
+        Set the multipliers/constant that tweak the colors of the merged image.
+        """
+        if hueMultiplier is not None: self._hueMultiplier = hueMultiplier
+        if hueConstant is not None: self._hueConstant = hueConstant
+        if valueMultiplier is not None: self._valueMultiplier = valueMultiplier
 
     ############################################################################
 
@@ -1490,7 +1505,7 @@ class DSAScene( QObject ):
         linSpace = np.tile( np.linspace( 0.0, 1.0, num = self._zLen ), (self._xLen, self._yLen, 1))
 
         self._hue = np.add.reduce( np.multiply( linSpace , np.divide( cubic, sumCubicX ) ) , axis = 2 )
-        self._hue = self.hueMultiplier * self._hue - self.hueConstant
+        self._hue = self._hueMultiplier * self._hue - self._hueConstant
 
         # Calculate saturation.
         self._sat = np.ones( (self._xLen, self._yLen) )
@@ -1501,7 +1516,7 @@ class DSAScene( QObject ):
         stdev = np.sqrt( np.add.reduce( np.square( np.subtract( self._volume, meanX ) ), axis = 2 ) )
 
         self._val = stdev / np.amax( stdev )
-        self._val = self.valueMultiplier * self._val
+        self._val = self._valueMultiplier * self._val
 
         # Clipping is required due to the multipliers/offset.
         self._hue[ self._hue < 0 ] = 0
@@ -1555,6 +1570,7 @@ class DSAScene( QObject ):
 
         self._renderWindow.AddRenderer( self._renderer )
 
+        self._interactor.SetInteractorStyle( MouseInteractorPickMinMax( self._renderer, self._pickHue ) )
         self._interactor.Initialize()
         self._interactor.Start()
 
@@ -1578,6 +1594,82 @@ class DSAScene( QObject ):
 
         self._renderWindow.AddRenderer( self._renderer )
         self._renderWindow.Render()
+
+    ############################################################################
+
+    def _pickHue( self, xPos, yPos ):
+        """
+        Update the hue multiplier and constant based on the picked points.
+        """
+        logger.debug( f"pickHue( {xPos}, {yPos} )" )
+
+        x = int( xPos / self._scaledImage.GetAxisMagnificationFactor( 0 ) )
+        y = int( yPos / self._scaledImage.GetAxisMagnificationFactor( 1 ) )
+        y = self._yLen - y
+
+        self._pickedHueValues.append( self._hue[y, x] )
+
+        if len( self._pickedHueValues ) == 2:
+            minHue, maxHue = sorted( self._pickedHueValues )
+            hueMultiplier = 0.7  / (maxHue - minHue)
+            hueConstant = 0.7 * minHue / (maxHue - minHue)
+            self.setParameters( hueMultiplier, hueConstant )
+            self.huePicked.emit( hueMultiplier, hueConstant )
+            self._pickedHueValues = []
+
+        # Draw a white square at the picked point.
+        self._hue[y - 10 : y + 10,x - 10 : x + 10] = 0
+        self._sat[y - 10 : y + 10,x - 10 : x + 10] = 0
+        self._val[y - 10 : y + 10,x - 10 : x + 10] = 1
+
+        self._rgbImage = hsv_to_rgb( np.dstack( (self._hue, self._sat, self._val) ) )
+        self.showRGBImage()
+
+################################################################################
+################################################################################
+
+class MouseInteractorPickMinMax( vtkInteractorStyleImage ):
+
+    """
+    Custom mouse interactor used in the DSA scene. Allows to pick a minimum and
+    maximum value on the image from which the hue multiplier and constant can be
+    calculated.
+    """
+
+    ############################################################################
+
+    def __init__( self, renderer, callback, parent = None ):
+        """
+        Initializes the interaction style.
+        """
+        logger.info( f"Creating {__class__.__name__}..." )
+
+        self._renderer, self._callback = renderer, callback
+        self._renderWindow = self._renderer.GetRenderWindow()
+
+        self.AddObserver( "MiddleButtonPressEvent", self._onMiddleButtonPress )
+        self.AddObserver( "MiddleButtonReleaseEvent", self._onMiddleButtonRelease )
+
+    ############################################################################
+
+    def _onMiddleButtonPress( self, object, event ):
+        """
+        Override to prevent other middle mouse button interactions.
+        """
+        logger.debug( f"_onMiddleButtonPress( {object.GetClassName()}, {event} )" )
+        pass
+
+    ############################################################################
+
+    def _onMiddleButtonRelease( self, object, event ):
+        """
+        Add a new electrode at the picked 3D position.
+        """
+        logger.debug( f"_onMiddleButtonRelease( {object.GetClassName()}, {event} )" )
+
+        clickPosition = self.GetInteractor().GetEventPosition()
+
+        self._callback( *clickPosition )
 
 ################################################################################
 ################################################################################

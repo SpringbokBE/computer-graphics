@@ -1,7 +1,7 @@
 """
 File name:  SceneAndInteractors.py
 Author:     Gerbrand De Laender
-Date:       01/05/2019
+Date:       02/05/2019
 Email:      gerbrand.delaender@ugent.be
 Brief:      E016712, Project, Neuroviz
 About:      Classes that group the behaviour of a scene (VTK render window,
@@ -45,10 +45,11 @@ class BasicSceneAndInteractor( QObject ):
 
         super().__init__( *args, **kwargs )
 
+        self._ui = ui
         self._settings = QApplication.instance().settings
 
-        self._scene = BasicScene( ui.qvtkBasic.GetRenderWindow() )
-        self._interactor = BasicWidget( ui.qdwDock )
+        self._scene = BasicScene( self._ui.qvtkBasic.GetRenderWindow() )
+        self._interactor = BasicWidget( self._ui.qdwDock )
 
         self._updateInteractorFromScene()
         self._updateSceneFromInteractor()
@@ -240,10 +241,11 @@ class EEGSceneAndInteractor( QObject ):
 
         super().__init__( *args, **kwargs )
 
+        self._ui = ui
         self._settings = QApplication.instance().settings
 
-        self._scene = EEGScene( ui.qvtkEEG.GetRenderWindow(), ui.qvtkXY.GetRenderWindow() )
-        self._interactor = EEGWidget( ui.qdwDock )
+        self._scene = EEGScene( self._ui.qvtkEEG.GetRenderWindow(), self._ui.qvtkXY.GetRenderWindow() )
+        self._interactor = EEGWidget( self._ui.qdwDock )
 
         self._updateSceneFromInteractor()
         self._connectSignalsToSlots()
@@ -322,14 +324,17 @@ class DSASceneAndInteractor( QObject ):
 
         super().__init__( *args, **kwargs )
 
+        self._ui = ui
         self._settings = QApplication.instance().settings
 
-        self._scene = DSAScene( ui.qvtkDSA.GetRenderWindow() )
-        self._interactor = DSAWidget( ui.qdwDock )
+        self._scene = DSAScene( self._ui.qvtkDSA.GetRenderWindow() )
+        self._interactor = DSAWidget( self._ui.qdwDock )
 
         self._initializeInteractor()
-        self._updateSceneFromInteractor()
         self._connectSignalsToSlots()
+
+        # Enable the first item in the combobox.
+        self._onComboBoxDataSetActivated( 0 )
 
     ############################################################################
 
@@ -355,28 +360,6 @@ class DSASceneAndInteractor( QObject ):
 
     ############################################################################
 
-    def _updateSceneFromInteractor( self ):
-        """
-        Update the scene with information from the interactor.
-        """
-        hueMultiplier = self._settings.value( f"{__class__.__name__}/HueMultiplier", 0.85, type = float )
-        hueConstant = self._settings.value( f"{__class__.__name__}/HueConstant", 0.1, type = float )
-        valueMultiplier = self._settings.value( f"{__class__.__name__}/ValueMultiplier", 0.85, type = float )
-
-        self._interactor.spinBoxHueMultiplier.setValue( hueMultiplier )
-        self._interactor.spinBoxHueConstant.setValue( hueConstant )
-        self._interactor.spinBoxValueMultiplier.setValue( valueMultiplier )
-
-        self._scene.hueMultiplier = hueMultiplier
-        self._scene.hueConstant = hueConstant
-        self._scene.valueMultiplier = valueMultiplier
-
-        self._scene.readDataSet( self._dataSetNames[self._interactor.comboBoxDataSet.currentIndex()] )
-        self._scene.calculateRGBImage()
-        self._scene.showRGBImage()
-
-    ############################################################################
-
     def _connectSignalsToSlots( self ):
         """
         Connect the signals to their slots.
@@ -394,6 +377,9 @@ class DSASceneAndInteractor( QObject ):
         self._spinBoxTimer.setSingleShot( True )
         self._spinBoxTimer.timeout.connect( self._onSpinBoxTimeout )
 
+        # When the user has picked two hue values.
+        self._scene.huePicked.connect( self._onHuePicked )
+
     ############################################################################
 
     @pyqtSlot( int )
@@ -403,7 +389,16 @@ class DSASceneAndInteractor( QObject ):
         """
         logger.debug( f"_onComboBoxDataSetActivated( {index} )" )
 
+        # Allow the user to pick two hue values.
+        self._ui.qdwDock.widget().setEnabled( False )
+
+        # Fill the spinboxes with default values.
+        self._interactor.spinBoxHueMultiplier.setValue( 1.0 )
+        self._interactor.spinBoxHueConstant.setValue( 0.0 )
+        self._interactor.spinBoxValueMultiplier.setValue( 3.0 )
+
         self._scene.readDataSet( self._dataSetNames[index] )
+        self._scene.setParameters( 1.0, 0.0, 3.0 )
         self._scene.calculateRGBImage()
         self._scene.showRGBImage()
 
@@ -416,7 +411,7 @@ class DSASceneAndInteractor( QObject ):
         """
         logger.debug( f"_onSpinBoxChanged( {_} )" )
 
-        self._spinBoxTimer.start( 1_000 )
+        if self._ui.qdwDock.widget().isEnabled: self._spinBoxTimer.start( 1_000 )
 
     ###########################################################################
 
@@ -427,16 +422,28 @@ class DSASceneAndInteractor( QObject ):
         """
         logger.debug( f"_onSpinBoxTimeout()" )
 
-        self._scene.hueMultiplier = self._interactor.spinBoxHueMultiplier.value()
-        self._scene.hueConstant = self._interactor.spinBoxHueConstant.value()
-        self._scene.valueMultiplier = self._interactor.spinBoxValueMultiplier.value()
+        hueMultiplier = self._interactor.spinBoxHueMultiplier.value()
+        hueConstant = self._interactor.spinBoxHueConstant.value()
+        valueMultiplier = self._interactor.spinBoxValueMultiplier.value()
 
+        self._scene.setParameters( hueMultiplier, hueConstant, valueMultiplier )
         self._scene.calculateRGBImage()
         self._scene.showRGBImage()
 
-        self._settings.setValue( f"{__class__.__name__}/HueMultiplier", self._scene.hueMultiplier )
-        self._settings.setValue( f"{__class__.__name__}/HueConstant", self._scene.hueConstant )
-        self._settings.setValue( f"{__class__.__name__}/ValueMultiplier", self._scene.valueMultiplier )
+    ############################################################################
+
+    @pyqtSlot( float, float )
+    def _onHuePicked( self, hueMultiplier, hueConstant ):
+        """
+        Update the spinboxes and enable the widget to be able to finetune the
+        hue multiplier and constant.
+        """
+        logger.debug( f"_onHuePicked( {hueMultiplier}, {hueConstant} )" )
+
+        self._interactor.spinBoxHueMultiplier.setValue( hueMultiplier )
+        self._interactor.spinBoxHueConstant.setValue( hueConstant )
+
+        self._ui.qdwDock.widget().setEnabled( True )
 
 ################################################################################
 ################################################################################
