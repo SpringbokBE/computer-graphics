@@ -12,7 +12,7 @@ This tool is able to:
 
 3. Visualize a time series of CT/MRI images on which blood flow vs. time is modeled through coloring.
 
-Most of the important settings and file paths are tweaked in the `Neuroviz.ini` file. More information on this file is found ![here](neuroviz/Documentation/Neuroviz.md). The application consists of three tabbed widgets that each perform one of the tasks. A detailed description of those scenes can be found here.
+Most of the important settings and file paths are tweaked in the `Neuroviz.ini` file. More information on this file is found ![here](neuroviz/Documentation/Neuroviz.md). The application consists of three tabbed widgets that each perform one of the tasks. A detailed description of those scenes can be found ![here](#scenes).
 
 ## Scenes
 
