@@ -86,7 +86,7 @@ UI                // Contains the native .ui files that make up the GUI.
 ```
 ## Application structure
 
-To get een overview of all classes and methods, see ![this](Documentation/ClassesAndMethods.md).
+To get an overview of all classes and methods, see ![this](Documentation/ClassesAndMethods.md).
 
 ## Authors
 
