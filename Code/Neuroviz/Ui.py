@@ -50,7 +50,6 @@ class Ui_qmwMain(object):
         self.verticalLayout_4.setObjectName("verticalLayout_4")
         self.qvtkDSA = QVTKRenderWindowInteractor(self.qwDSA)
         self.qvtkDSA.setMinimumSize(QtCore.QSize(0, 512))
-        self.qvtkDSA.setMaximumSize(QtCore.QSize(16777215, 512))
         self.qvtkDSA.setObjectName("qvtkDSA")
         self.verticalLayout_4.addWidget(self.qvtkDSA)
         self.tabWidget.addTab(self.qwDSA, "")
