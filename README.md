@@ -12,7 +12,7 @@ This tool is able to:
 
 3. Visualize a time series of CT/MRI images on which blood flow vs. time is modeled through coloring.
 
-Most of the important settings and file paths are tweaked in the `Neuroviz.ini` file. More information on this file is found here. The application consists of three tabbed widgets that each perform one of the tasks. A detailed description of those scenes can be found here.
+Most of the important settings and file paths are tweaked in the `Neuroviz.ini` file. More information on this file is found ![here](neuroviz/Documentation/Neuroviz.md). The application consists of three tabbed widgets that each perform one of the tasks. A detailed description of those scenes can be found here.
 
 ## Scenes
 
@@ -68,13 +68,7 @@ Note: these requirements are merely an indication, using different versions of t
 
 ## Installation
 
-Run `Code/Main.py`. All configuration is done through the `Code/Neuroviz.ini` file.
-
-## Authors
-
-* **Gerbrand De Laender** (gerbrand.delaender@ugent.be)
-* **Toon Dilissen** (toon.dilissen@ugent.be)
-* **Peter Vercoutter** (peter.vercoutter@ugent.be)
+Run `Code/Main.py`. All configuration is done through the `Code/Neuroviz.ini` file (see ![this](neuroviz/Documentation/Neuroviz.md)).
 
 ## Folder structure
 
@@ -90,7 +84,12 @@ Data              // Contains datasets used in the application.
 Documentation     // Contains screenshots and additional information.
 UI                // Contains the native .ui files that make up the GUI.
 ```
-
 ## Application structure
 
-To get een overview of all classes and methods, go here.
+To get een overview of all classes and methods, see ![this](neuroviz/Documentation/ClassesAndMethods.md).
+
+## Authors
+
+* **Gerbrand De Laender** (gerbrand.delaender@ugent.be)
+* **Toon Dilissen** (toon.dilissen@ugent.be)
+* **Peter Vercoutter** (peter.vercoutter@ugent.be)
