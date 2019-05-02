@@ -189,6 +189,7 @@ class DSAWidget( QWidget ):
         self._settings = QApplication.instance().settings
 
         self._createLayout()
+        self.setEnabled( False )
 
     ############################################################################
 
@@ -209,19 +210,19 @@ class DSAWidget( QWidget ):
 
         self._labelHueMultiplier = QLabel( "Color range", self )
         self.spinBoxHueMultiplier = QDoubleSpinBox( self )
-        self.spinBoxHueMultiplier.setRange( 0.5, 1.5 )
+        self.spinBoxHueMultiplier.setRange( 0.5, 5.0 )
         self.spinBoxHueMultiplier.setDecimals( 2 )
         self.spinBoxHueMultiplier.setSingleStep( 0.01 )
 
         self._labelHueConstant = QLabel( "Color offset", self )
         self.spinBoxHueConstant = QDoubleSpinBox( self )
-        self.spinBoxHueConstant.setRange( 0.0, 1.0 )
+        self.spinBoxHueConstant.setRange( 0.0, 5.0 )
         self.spinBoxHueConstant.setDecimals( 2 )
         self.spinBoxHueConstant.setSingleStep( 0.01 )
 
         self._labelValueMultiplier = QLabel( "Detail", self )
         self.spinBoxValueMultiplier = QDoubleSpinBox( self )
-        self.spinBoxValueMultiplier.setRange( 0.5, 10.0 )
+        self.spinBoxValueMultiplier.setRange( 0.5, 5.0 )
         self.spinBoxValueMultiplier.setDecimals( 2 )
         self.spinBoxValueMultiplier.setSingleStep( 0.01 )
 
