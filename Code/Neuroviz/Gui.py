@@ -69,15 +69,9 @@ class Gui( QMainWindow ):
         """
         self._settings.beginGroup( f"{__class__.__name__}" )
         self._pyFileName = self._settings.value( "PyFileName", "/Neuroviz/Ui.py", type = str )
-<<<<<<< HEAD
         self._pyFileName = normpath( getcwd() + self._pyFileName )
         self._uiFileName = self._settings.value( "UiFileName", "/../UI/Neuroviz.ui", type = str )
         self._uiFileName = normpath( getcwd() + self._uiFileName )
-=======
-        self._pyFileName = normpath( getcwd() + self._sPyFileName )
-        self._uiFileName = self._settings.value( "UiFileName", "/../UI/Neuroviz.ui", type = str )
-        self._uiFileName = normpath( getcwd() + self._sUiFileName )
->>>>>>> 8ab87322cc9aaf6dd41f0e50e4f56d0ce5f871c8
         self._uiClassName = self._settings.value( "UiClassName", "Ui_qmwMain", type = str )
         self._settings.endGroup()
 
