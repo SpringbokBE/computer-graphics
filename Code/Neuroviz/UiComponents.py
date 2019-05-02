@@ -1,3 +1,16 @@
+"""
+File name:  UiComponents.py
+Author:     Gerbrand De Laender
+Date:       01/05/2019
+Email:      gerbrand.delaender@ugent.be
+Brief:      E016712, Project, Neuroviz
+About:      Classes that contain custom widgets (components) for the Neuroviz
+            graphical user interface.
+"""
+
+################################################################################
+################################################################################
+
 from logging import getLogger
 
 from PyQt5.QtCore import QSettings, Qt, QTimer, pyqtSignal, pyqtSlot
@@ -11,6 +24,14 @@ logger = getLogger( __name__ )
 
 class SliderGroup( QWidget ):
 
+    """
+    Groups the behaviour of a QSlider, QSpinBox and a QCheckBox.
+    Updates the spinbox whenever the slider changes (and vice versa), and
+    enables/disables the group based on the state of the checkbox.
+    """
+
+    ############################################################################
+
     valueChanged = pyqtSignal( int )
     toggled = pyqtSignal( bool )
 
@@ -18,9 +39,7 @@ class SliderGroup( QWidget ):
 
     def __init__( self, name, *args, **kwargs ):
         """
-        Groups the behaviour of a QSlider, QSpinBox and a QCheckBox.
-        Updates the spinbox whenever the slider changes (and vice versa), and
-        enables/disables the group based on the state of the checkbox.
+        Initialize the widget.
         """
         logger.info( f"Creating {__class__.__name__}..." )
 

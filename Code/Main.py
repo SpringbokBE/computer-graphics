@@ -1,3 +1,15 @@
+"""
+File name:  App.py
+Author:     Gerbrand De Laender
+Date:       02/05/2019
+Email:      gerbrand.delaender@ugent.be
+Brief:      E016712, Project, Neuroviz
+About:      Instantiates the Neuroviz application along with logging.
+"""
+
+################################################################################
+################################################################################
+
 from logging import (CRITICAL, DEBUG, FileHandler, Formatter, Logger,
                      StreamHandler, getLogger)
 from sys import argv, exit
