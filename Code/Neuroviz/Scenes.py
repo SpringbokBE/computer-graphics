@@ -590,6 +590,14 @@ class BasicScene( QObject ):
 
         self._renderWindow.AddRenderer( self._renderer )
 
+        # Enable depth peeling to correctly render translucent polygonal
+        # geometry. See https://vtk.org/Wiki/VTK/Depth_Peeling.
+        self._renderWindow.SetAlphaBitPlanes( True )
+        self._renderWindow.SetMultiSamples( 0 )
+        self._renderer.SetUseDepthPeeling( True )
+        self._renderer.SetMaximumNumberOfPeels( 100 )
+        self._renderer.SetOcclusionRatio( 0.1 )
+
         self._interactor.Initialize()
         self._interactor.Start()
 
