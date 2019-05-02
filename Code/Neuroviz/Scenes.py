@@ -1,6 +1,19 @@
+"""
+File name:  Scenes.py
+Author:     Gerbrand De Laender, Toon Dilissen, Peter Vercoutter
+Date:       01/05/2019
+Email:      gerbrand.delaender@ugent.be, toon.dilissen@ugent.be,
+            peter.vercoutter@ugent.be
+Brief:      E016712, Project, Neuroviz
+About:      Classes that compose VTK scenes that represent some neuroimaging
+            task. For each of the three tasks, a different class exists.
+"""
+
+################################################################################
+################################################################################
+
 from glob import glob
 from logging import getLogger
-from math import sqrt
 from os import getcwd
 from os.path import isfile, realpath
 from random import choice
@@ -19,12 +32,11 @@ from vtk import (vtkActor, vtkActor2D, vtkAxis, vtkBox, vtkCamera,
                  vtkImageResample, vtkImageReslice,
                  vtkInteractorStyleTrackballCamera, vtkLookupTable, vtkMath,
                  vtkMatrix4x4, vtkNamedColors, vtkOutlineFilter, vtkPlane,
-                 vtkPNGReader, vtkPointPicker, vtkPoints, vtkPolyData,
-                 vtkPolyDataMapper, vtkPolyDataNormals, vtkRenderer,
-                 vtkRenderWindow, vtkRenderWindowInteractor,
-                 vtkResampleWithDataSet, vtkScalarBarActor, vtkShepardMethod,
-                 vtkSphereSource, vtkStripper, vtkTable, vtkVector2f,
-                 vtkVector2i, vtkVectorText, vtkWindowedSincPolyDataFilter,
+                 vtkPointPicker, vtkPoints, vtkPolyData, vtkPolyDataMapper,
+                 vtkPolyDataNormals, vtkRenderer, vtkResampleWithDataSet,
+                 vtkScalarBarActor, vtkShepardMethod, vtkSphereSource,
+                 vtkStripper, vtkTable, vtkVector2f, vtkVector2i,
+                 vtkVectorText, vtkWindowedSincPolyDataFilter,
                  vtkWorldPointPicker)
 from vtk.util.numpy_support import numpy_to_vtk
 
@@ -35,12 +47,16 @@ logger = getLogger( __name__ )
 
 class BasicScene( QObject ):
 
+    """
+    Composes a scene in which isosurfaces and orthogonal slices through
+    volumetric data are visualized in different ways.
+    """
+
     ########################################################################
 
     def __init__( self, renderWindow, *args, **kwargs ):
         """
-        Creates a basic scene in which isosurfaces and orthogonal slices through
-        the volumetric data are visualized.
+        Initializes the "Basic" scene and its attributes.
         """
         logger.info( f"Creating {__class__.__name__}..." )
 
@@ -74,18 +90,16 @@ class BasicScene( QObject ):
             self._createEmptyRenderer()
             return
 
-        logger.info( f"File {fullName} read succesfully!" )
+        logger.info( f"File {fullName} succesfully read!" )
         self._settings.setValue( f"{__class__.__name__}/FileName", fileName )
 
         self._createNamedColors()
         self._createOutlineActor()
-
         self._readContourInfo()
         self._createContours()
         self._createContourActors()
         self._createOctants()
         self._createOctantActors()
-
         self._createImageResliceActors()
         self._createRendererAndInteractor()
 
@@ -93,6 +107,7 @@ class BasicScene( QObject ):
             interactionStyle = self._settings.value( f"{__class__.__name__}/InteractionStyle", "Opacity", type = str )
 
         self.setInteractionStyle( interactionStyle )
+
         self._settings.setValue( f"{__class__.__name__}/InteractionStyle", self._style )
 
     ############################################################################
@@ -103,7 +118,7 @@ class BasicScene( QObject ):
         """
         logger.debug( f"updateSlices( {slices} )" )
 
-        self._slices = list( slices )
+        self._slices = list( slices )   # To be able to update the values afterwards.
 
         if self._style == "Interactive":
             self._updateOctantActors()
@@ -128,6 +143,7 @@ class BasicScene( QObject ):
     def setInteractionStyle( self, interactionStyle ):
         """
         Sets the interaction style for the scene.
+
         -> "Opacity"        : The outline will stay the same but with a
                               variable opacity.
         -> "Interactive"    : The outline will be split up into 1/2/4/8 pieces,
@@ -139,21 +155,25 @@ class BasicScene( QObject ):
         """
         logger.debug( f"setInteractionStyle( {interactionStyle} )" )
 
+        # Remove the current observers.
         for obj, tag in self._observedObjectsAndTags: obj.RemoveObserver( tag )
         self._observedObjectsAndTags = []
 
         self._renderer.RemoveAllViewProps()
-        for actor in self._imageResliceActors: self._renderer.AddActor( actor )
+        for actor in self._imageResliceActors:
+            self._renderer.AddActor( actor )
+            self._renderer.AddActor( self._outlineActor )
         self._interactor.SetInteractorStyle( vtkInteractorStyleTrackballCamera() )
 
+        # Setup the scene (actors, interaction, observers) for opacity mode.
         if interactionStyle == "Opacity":
             self._style = "Opacity"
-            self._renderer.AddActor( self._outlineActor )
             for actor in self._contourActors:
                 self._renderer.AddActor( actor )
+
+        # Setup the scene (actors, interaction, observers) for interactive mode.
         elif interactionStyle == "Interactive":
             self._style = "Interactive"
-            self._renderer.AddActor( self._outlineActor )
             for actor in self._octantActors:
                 actor.SetVisibility( True )
                 self._renderer.AddActor( actor )
@@ -161,9 +181,10 @@ class BasicScene( QObject ):
                 self._renderer.AddActor( actor )
             interactor = MouseInteractorToggleOpacity( self._renderer, self._octantActors, self._slices )
             self._interactor.SetInteractorStyle( interactor )
+
+        # Setup the scene (actors, interaction, observers) for automatic mode.
         else:
             self._style = "Automatic"
-            self._renderer.AddActor( self._outlineActor )
             for actor in self._octantActors:
                 actor.GetProperty().SetOpacity( 1 )
                 self._renderer.AddActor( actor )
@@ -177,19 +198,18 @@ class BasicScene( QObject ):
         self._renderer.ResetCamera()
         self._renderWindow.Render()
 
+        # Update scene from settings.
         self._activeContourName = self._settings.value( f"{__class__.__name__}/ActiveContour", "Brain", type = str )
-        self.setActiveContour( self._activeContourName )
         self._opacity = self._settings.value( f"{__class__.__name__}/Opacity", 0.4, type = float )
+
+        self.setActiveContour( self._activeContourName )
         self.setOpacity( self._opacity )
 
         # Bounds become initialized only after the actors have been added.
         bounds = self.getBounds()
         self._min, self._max = bounds[::2], bounds[1::2]
 
-        if self._style == "Interactive":
-            self._updateOctantActors()
-        elif self._style == "Automatic":
-            self._updateOctantActors()
+        if not self._style == "Opacity": self._updateOctantActors()
 
         self._renderWindow.Render()
 
@@ -216,7 +236,7 @@ class BasicScene( QObject ):
 
     def getActiveContourName( self ):
         """
-        Get the name of the active contour.
+        Get the name of the currently active contour.
         """
         return self._activeContourName
 
@@ -250,7 +270,7 @@ class BasicScene( QObject ):
 
     def setOpacity( self, value ):
         """
-        Set the opacity value if used in the current interaction style.
+        Set the opacity value if it is used in the current interaction style.
         """
         if self._style == "Automatic": return
 
@@ -262,7 +282,6 @@ class BasicScene( QObject ):
             self._interactor.GetInteractorStyle().setOpacity( self._opacity )
 
         self._renderWindow.Render()
-        self._settings.setValue( f"{__class__.__name__}/Opacity", self._opacity )
 
     ############################################################################
 
@@ -355,8 +374,10 @@ class BasicScene( QObject ):
     def _createContours( self ):
         """
         Create the smoothed contours (isosurfaces). Smoothing is done on the
-        input data using a Gaussian filter, and on the isosurfaces thenselves
-        using a windowed sinc filter.
+        input data using a Gaussian filter, and on the isosurfaces themselves
+        using a windowed sinc filter followed by normal creation to create a
+        smooth shading. The stripper creates triangle strips from the isosurface
+        that will render very fast.
         """
         self._gaussians    = [None for _ in range( self._nContours )]
         self._tempContours = [None for _ in range( self._nContours )]
@@ -431,12 +452,17 @@ class BasicScene( QObject ):
 
     def _createOctants( self ):
         """
+        Creates "octants" which cut the original contour at the location of the
+        current slices.
         """
         name = self._contourNames[0]
 
+        # The boxes define the area to extract from the original contour, for
+        # each octant.
         self._boxes = [vtkBox() for _ in range( 8 )]
         for box in self._boxes: box.SetBounds( 0, 0, 0, 0, 0, 0 )
 
+        # Create the regular isosurface of the head.
         self._contour = vtkContourFilter()
         self._contour.SetInputConnection( self._reader.GetOutputPort() )
         self._contour.SetValue( 0 , self._contourValues[name] )
@@ -444,6 +470,7 @@ class BasicScene( QObject ):
         self._contour.ComputeGradientsOff()
         self._contour.ComputeNormalsOff()
 
+        # Create the extractors for each octant.
         self._extractions = [vtkExtractPolyDataGeometry() for _ in range( 8 )]
         for i, extraction in enumerate( self._extractions ):
             extraction.SetInputConnection( self._contour.GetOutputPort() )
@@ -451,6 +478,8 @@ class BasicScene( QObject ):
             extraction.ExtractInsideOn()
             extraction.ExtractBoundaryCellsOn()
 
+        # Smooth out the octants after extraction using a windowed sinc filter.
+        # Doing this before extraction will result in strange boundary cells.
         if name in self._contourSmoothings:
             radius, stdDev, iters, passBand, angle = self._contourSmoothings[name]
 
@@ -481,6 +510,8 @@ class BasicScene( QObject ):
 
     def _createOctantActors( self ):
         """
+        Creates actors from the octants. Used in all styles except from
+        "Opacity".
         """
         self._octantMappers = [vtkPolyDataMapper() for _ in range( 8 )]
         for i, octantMapper in enumerate( self._octantMappers ):
@@ -497,9 +528,12 @@ class BasicScene( QObject ):
     def _createImageResliceActors( self ):
         """
         Creates three orthogonal planes that cut through the volumetric data.
+        Does not use the VTKImagePlaneWidget to be able to control the reslicing
+        purely from the GUI. This creates a smoother interaction.
         """
         self._center = self._reader.GetOutput().GetCenter()
 
+        # The matrices define the normals and position of each of the planes.
         coronal = vtkMatrix4x4()
         coronal.DeepCopy( (0, 0, 1, self._center[0],
                            1, 0, 0, self._center[1],
@@ -577,11 +611,13 @@ class BasicScene( QObject ):
         """
         Update the octant actors so they match the current slice positions.
         """
+        logger.debug( f"_updateOctantActors()" )
+
         slices = [None for _ in range( 3 )]
 
         # If slicing along an axis is disabled, cut the contour right in the
         # middle. This will make sure all octants are used instead of removing
-        # some. The handling of the octants as one will be done in the
+        # some. The handling of the octants as one unit will be done in the
         # MouseInteractorToggleOpacity class.
         for i, slice in enumerate( self._slices ):
             if slice is None: slices[i] = (self._min[i] + self._max[i]) // 2
@@ -606,9 +642,9 @@ class BasicScene( QObject ):
         Update the octant actor such that the octant facing the camera is
         not shown. Updates the octants on sign changes of the DOP vector
         (Direction Of Projection). Forcing an update is also supported to allow
-        e.g. changes in slicing. Used in the "Automatic" interaction style.
+        for changes in slicing. Used in the "Automatic" interaction style.
         """
-        logger.debug( f"_updateOctantActorsVisibility( {force} )" )
+        logger.debug( f"_updateOctantActorsVisibility( {DOP}, {force} )" )
 
         if not force:
             signChanged = False
@@ -622,6 +658,7 @@ class BasicScene( QObject ):
             if signChanged: self._DOP = DOP
             else: return
 
+        # Contains the id's of the octants which need not to be shown.
         notToShow = set( range( 8 ) )
 
         if self._slices[0] is not None:
@@ -638,11 +675,9 @@ class BasicScene( QObject ):
 
         toShow = set( range( 8 ) ) - notToShow
 
-        for index in toShow:
-            self._octantActors[index].SetVisibility( True )
+        for index in toShow: self._octantActors[index].SetVisibility( True )
 
-        for index in notToShow:
-            self._octantActors[index].SetVisibility( False )
+        for index in notToShow: self._octantActors[index].SetVisibility( False )
 
     ############################################################################
 
@@ -658,6 +693,8 @@ class BasicScene( QObject ):
                 self._imageResliceActors[i].SetVisibility( False )
             else:
                 self._imageResliceActors[i].SetVisibility( True )
+
+                # Update the center of the slice in the user matrix.
                 matrix = imageReslice.GetResliceAxes()
                 matrix.SetElement( i, 3, self._slices[i] )
 
@@ -665,33 +702,35 @@ class BasicScene( QObject ):
 
     def _onCameraMoved( self, camera, event ):
         """
-        Update the contour extraction actor and the current direction of
+        Update the contour extraction actor based on the current direction of
         projection. Used in the "Automatic" interaction style.
         """
-        # logger.debug( f"_onCameraMoved()" )
+        logger.debug( f"_onCameraMoved( {camera.GetClassName()}, {event})" )
 
-        DOP = camera.GetDirectionOfProjection()
-        self._updateOctantActorsVisibility( DOP )
+        self._updateOctantActorsVisibility( camera.GetDirectionOfProjection() )
 
 ################################################################################
 ################################################################################
 
 class MouseInteractorToggleOpacity( vtkInteractorStyleTrackballCamera ):
 
+    """
+    Custom mouse interactor used for the "Interactive" interaction style of
+    the BasicScene. Toggles the opacity of the picked actor (or group of
+    actors when slicing is disabled along a particular axis) on a middle-
+    mouse click.
+    """
+
     ############################################################################
 
-    def __init__( self, renderer, actors, slices, parent = None ):
+    def __init__( self, renderer, octants, slices, parent = None ):
         """
-        Custom mouse interactor used for the "Interactive" interaction style of
-        the BasicScene. Toggles the opacity of the picked actor (or group of
-        actors when slicing is disabled along a particular axis) on a middle-
-        mouse click.
+        Initializes the interaction style.
         """
         logger.info( f"Creating {__class__.__name__}..." )
 
-        self._renderer, self._actors, self._slices = renderer, actors, slices
+        self._renderer, self._octants, self._slices = renderer, octants, slices
         self._renderWindow = self._renderer.GetRenderWindow()
-        self._opacity = 0.4
 
         self.AddObserver( "MiddleButtonPressEvent", self._onMiddleButtonPress )
         self.AddObserver( "MiddleButtonReleaseEvent", self._onMiddleButtonRelease )
@@ -700,7 +739,7 @@ class MouseInteractorToggleOpacity( vtkInteractorStyleTrackballCamera ):
 
     def updateSlices( self, slices ):
         """
-        Updating the slices will require this method.
+        Updating the slices requires a call to this function.
         """
         self._slices = list( slices )
 
@@ -720,9 +759,9 @@ class MouseInteractorToggleOpacity( vtkInteractorStyleTrackballCamera ):
         """
         self._opacity = value
 
-        for actor in self._actors:
-            if not actor.GetProperty().GetOpacity() == 1:
-                actor.GetProperty().SetOpacity( self._opacity )
+        for octant in self._octants:
+            if not octant.GetProperty().GetOpacity() == 1:
+                octant.GetProperty().SetOpacity( self._opacity )
 
     ############################################################################
 
@@ -730,7 +769,7 @@ class MouseInteractorToggleOpacity( vtkInteractorStyleTrackballCamera ):
         """
         Override to prevent other middle mouse button interactions.
         """
-        logger.debug( "_onMiddleButtonPress()" )
+        logger.debug( f"_onMiddleButtonPress( {object.GetClassName()}, {event} )" )
         pass
 
     ############################################################################
@@ -739,10 +778,12 @@ class MouseInteractorToggleOpacity( vtkInteractorStyleTrackballCamera ):
         """
         Toggle the opacity of the closest picked actor(s).
         """
-        logger.debug( "_onMiddleButtonRelease()" )
+        logger.debug( f"_onMiddleButtonRelease( {object.GetClassName()}, {event} )" )
 
         clickPosition = self.GetInteractor().GetEventPosition()
 
+        # Find the closest picked actor that matches one of the supplied actors
+        # during construction.
         picker = vtkPointPicker()
         picker.Pick( *clickPosition[:2], 0, self._renderer )
         pickPosition = picker.GetPickPosition()
@@ -750,26 +791,27 @@ class MouseInteractorToggleOpacity( vtkInteractorStyleTrackballCamera ):
         pickedProp3Ds = picker.GetProp3Ds()
         pickedProp3Ds.InitTraversal()
 
-        pickedActors = set()
+        pickedOctants = set()
 
+        # Use prop3D's to disable picking 2D actors.
         prop3D = pickedProp3Ds.GetNextProp3D()
         while prop3D is not None:
             actor = vtkActor.SafeDownCast( prop3D )
-            if actor: pickedActors.add( actor )
+            if actor in self._octants: pickedOctants.add( actor )
             prop3D = pickedProp3Ds.GetNextProp3D()
 
-        closestActor, closestDistance = None, float( "inf" )
+        closestOctant, closestDistance = None, float( "inf" )
 
-        for actor in pickedActors:
+        for actor in pickedOctants:
             distance = vtkMath.Distance2BetweenPoints( pickPosition, actor.GetCenter() )
             if distance < closestDistance:
-                closestDistance, closestActor = distance, actor
+                closestDistance, closestOctant = distance, actor
 
-        if closestActor is None: return
+        if closestOctant is None: return
 
         # Group pieces when slicing along a particular axis has been disabled.
-        # ID's of the contour extraction actors  are labeled from 0 to 7.
-        idOfClosestActor = self._actors.index( closestActor )
+        # ID's of the octants are labeled from 0 to 7.
+        idOfClosestActor = self._octants.index( closestOctant )
         idsToToggle = [idOfClosestActor]
 
         ids = ((0, 1, 2, 3), (0, 1, 4, 5), (0, 2, 4, 6))
@@ -783,10 +825,10 @@ class MouseInteractorToggleOpacity( vtkInteractorStyleTrackballCamera ):
             idsToToggle.extend( idsToAppend )
 
         for id in idsToToggle:
-            if self._actors[id].GetProperty().GetOpacity() == 1:
-                self._actors[id].GetProperty().SetOpacity( self._opacity )
+            if self._octants[id].GetProperty().GetOpacity() == 1:
+                self._octants[id].GetProperty().SetOpacity( self._opacity )
             else:
-                self._actors[id].GetProperty().SetOpacity( 1 )
+                self._octants[id].GetProperty().SetOpacity( 1 )
 
         self._renderWindow.Render()
 
@@ -795,29 +837,32 @@ class MouseInteractorToggleOpacity( vtkInteractorStyleTrackballCamera ):
 
 class EEGScene( QObject ):
 
+    """
+    Composes a scene in which a brain model is visualized and up to 8 electrodes
+    can be added. The electrodes are assigned different values in time to
+    simulate brain activity. The values on the brain model are interpolated and
+    visualized using a color scale. The activity of each of the electrodes is
+    monitored on XY charts.
+    """
+
     ############################################################################
 
     def __init__( self, renderWindow, chartXYWindow, *args, **kwargs ):
         """
-        Creates a scene in which a brain model is shown and 8 electrodes can be
-        added. Random values are generated at the electrodes and the model is
-        colored by using interpolation.
+        Initializes the "EEG" scene and its attributes.
         """
         logger.info( f"Creating {__class__.__name__}..." )
 
         super().__init__( *args, **kwargs )
 
-        self._renderWindow = renderWindow
-        self._chartXYWindow = chartXYWindow
+        self._renderWindow, self._chartXYWindow = renderWindow, chartXYWindow
         self._settings = QApplication.instance().settings
 
-        self._electrodeActors = []
-        self._electrodePositions = []
-        self._electrodeValues = []
+        self._electrodeActors, self._electrodePositions, self._electrodeValues = [], [], []
+        self._animationEnabled = False
 
         self.initializeScene()
 
-        self._animationEnabled = False
         self._timer = QTimer()
         self._timer.timeout.connect( self._onTimeout )
 
@@ -840,7 +885,7 @@ class EEGScene( QObject ):
             self._createEmptyRenderer()
             return
 
-        logger.info( f"File {fullName} read succesfully!" )
+        logger.info( f"File {fullName} succesfully read!" )
         self._settings.setValue( f"{__class__.__name__}/FileName", fileName )
 
         self._createNamedColors()
@@ -863,6 +908,7 @@ class EEGScene( QObject ):
         self._renderer.AddActor( self._contourActor )
         self._renderer.AddActor2D( self._scalarBarActor )
         self._renderer.ResetCamera()
+
         self._renderWindow.Render()
         self._chartXYWindow.Render()
 
@@ -897,7 +943,8 @@ class EEGScene( QObject ):
             self._electrodeValues = self._electrodeValues[1:] + [ choice( self._electrodeChoices ) ]
             self._clearCharts()
 
-        # Update the electrode text positions.
+        # Update the electrode text positions, place them slightly next to the
+        # location of the electrode.
         for i, pos in enumerate( self._electrodePositions ):
             self._electrodeTextActors[i].SetPosition( pos[0] - 10, pos[1] - 10, pos[2] + 10 )
 
@@ -979,7 +1026,7 @@ class EEGScene( QObject ):
     def _createContour( self ):
         """
         Creates an isosurface (contour) from the input data. If smoothing is
-        enabled in the settings, smooth the data first.
+        enabled in the settings, smooth the data first using a Geussian filter.
         """
         self._gaussian = vtkImageGaussianSmooth()
         self._contour = vtkContourFilter()
@@ -1004,7 +1051,9 @@ class EEGScene( QObject ):
     def _smoothContour( self ):
         """
         Smooth the contours using a windowed sinc filter with the provided
-        settings.
+        settings. The windowed sinc filter is followed by normal creation to
+        create a smooth shading. The stripper creates triangle strips from the
+        isosurface that will render very fast.
         """
         radius, stdDev, iters, passBand, angle = self._contourSmoothing
 
@@ -1033,7 +1082,7 @@ class EEGScene( QObject ):
         Interpolate the scalar values of the contour based on the values and
         positions of the electrodes. Uses an inverse distance weighting (IDW)
         function defined by Shepard. To provide better efficiency and control,
-        the data i interpolated onto a grid and then resampled onto the contour
+        the data is interpolated onto a grid and then resampled onto the contour
         afterwards.
         """
         logger.debug( f"_interpolateContour()" )
@@ -1043,8 +1092,7 @@ class EEGScene( QObject ):
             self._contourMapper.SetInputConnection( self._smoothedContour.GetOutputPort() )
             return
 
-        self._points = vtkPoints()
-        self._values = vtkFloatArray()
+        self._points, self._values = vtkPoints(), vtkFloatArray()
 
         for point, value in zip( self._electrodePositions, self._electrodeValues ):
             self._points.InsertNextPoint( point )
@@ -1054,16 +1102,17 @@ class EEGScene( QObject ):
         self._electrodes.SetPoints( self._points )
         self._electrodes.GetPointData().SetScalars( self._values )
 
+        # Add one to the bounds to include points right on the bounds.
         bounds = list( self._contour.GetOutput().GetBounds() )
         bounds = [ x + y for x, y in zip( bounds, [-1, 1, -1, 1, -1, 1] ) ]
 
         self._shepard = vtkShepardMethod()
         self._shepard.SetInputData( self._electrodes )
         self._shepard.SetModelBounds( bounds )
-        self._shepard.SetSampleDimensions( 50, 50, 25 )
-        self._shepard.SetMaximumDistance( 1.0 )
-        self._shepard.SetNullValue( 0.5 )
-        self._shepard.SetPowerParameter( 2 )
+        self._shepard.SetSampleDimensions( 50, 50, 25 ) # The size of the grid to sample onto.
+        self._shepard.SetMaximumDistance( 1.0 ) # Include ALL electrodes to calculate the value of a sample.
+        self._shepard.SetNullValue( 0.5 ) # When max. distance is not 1 and a sample is out of range of any electrode, give it this value.
+        self._shepard.SetPowerParameter( 2 ) # Higher power factors will decay slower.
 
         self._resample = vtkResampleWithDataSet()
         self._resample.SetInputConnection( self._smoothedContour.GetOutputPort() )
@@ -1125,7 +1174,7 @@ class EEGScene( QObject ):
 
     def _createCharts( self ):
         """
-        Create charts that display the last 8 electrode values for each
+        Create charts that display the last N electrode values for each
         electrode.
         """
         self._matrix = vtkChartMatrix()
@@ -1136,7 +1185,6 @@ class EEGScene( QObject ):
         self._view.GetRenderer().SetBackground( 1.0, 1.0, 1.0 )
         self._view.GetScene().AddItem( self._matrix )
         self._view.SetRenderWindow( self._chartXYWindow )
-
 
         self._electrodeValueTable = vtkTable()
         columns = [vtkFloatArray() for _ in range( 9 )]
@@ -1150,8 +1198,7 @@ class EEGScene( QObject ):
 
         for i in range( self._nSamples ):
             self._electrodeValueTable.SetValue( i, 0, i )
-            for j in range( 1, 9 ):
-                self._electrodeValueTable.SetValue( i, j, 0)
+            for j in range( 1, 9 ): self._electrodeValueTable.SetValue( i, j, 0)
 
         for j in reversed( range( 2 ) ):
             for k in range( 4 ):
@@ -1191,9 +1238,10 @@ class EEGScene( QObject ):
 
     def _createElectrodeTextActors( self ):
         """
-
+        Create text actors containing numbers 1 through 8 to be able to label
+        the electrode actors.
         """
-        self._electrodeTextActors = [ vtkFollower() for _ in range( 8 ) ]
+        self._electrodeTextActors = [vtkFollower() for _ in range( 8 )]
 
         for i, actor in enumerate( self._electrodeTextActors ):
             textSource = vtkVectorText()
@@ -1210,7 +1258,10 @@ class EEGScene( QObject ):
 
     def _updateCharts( self ):
         """
+        Update the XY charts according to the new electrode values.
         """
+        logger.debug( f"_updateCharts()" )
+
         nElectrodes = len( self._electrodeActors )
 
         # Shift the current values.
@@ -1236,6 +1287,8 @@ class EEGScene( QObject ):
         """
         Clear the charts.
         """
+        logger.debug( f"_clearCharts" )
+
         for i in range( self._nSamples ):
             self._electrodeValueTable.SetValue( i, 0, i )
             for j in range( 1, 9 ):
@@ -1252,7 +1305,7 @@ class EEGScene( QObject ):
 
         if not self._electrodeActors: return
 
-        self._renderWindow.Render()
+        self._renderWindow.Render() # Show the previous colours.
 
         self._electrodeValues = [ choice( self._electrodeChoices ) for _ in range( len( self._electrodeActors ) ) ]
 
@@ -1267,19 +1320,24 @@ class EEGScene( QObject ):
 
 class MouseInteractorAddElectrode( vtkInteractorStyleTrackballCamera ):
 
+    """
+    Custom mouse interactor used in the EEG scene. Allows to pick points
+    on the provided contour by using a middle mouse button click.
+    When the button is released, the callback function is called and is
+    provided with the 3D click position as argument.
+    """
+
     ############################################################################
 
     def __init__( self, renderer, contour, callback, parent = None ):
         """
-        Custom mouse interactor used in the EEG scene. Allows to pick points
-        on the provided contour by using a middle mouse button click.
-        When the button is released, the callback function is called and is
-        provided with the 3D click position as argument.
+        Initializes the interaction style.
         """
         logger.info( f"Creating {__class__.__name__}..." )
 
         self._renderer, self._contour, self._callback = renderer, contour, callback
         self._renderWindow = self._renderer.GetRenderWindow()
+
         self.AddObserver( "MiddleButtonPressEvent", self._onMiddleButtonPress )
         self.AddObserver( "MiddleButtonReleaseEvent", self._onMiddleButtonRelease )
 
@@ -1289,16 +1347,16 @@ class MouseInteractorAddElectrode( vtkInteractorStyleTrackballCamera ):
         """
         Override to prevent other middle mouse button interactions.
         """
-        logger.debug( "_onMiddleButtonPress()" )
+        logger.debug( f"_onMiddleButtonPress( {object.GetClassName()}, {event} )" )
         pass
 
     ############################################################################
 
     def _onMiddleButtonRelease( self, object, event ):
         """
-        Add a new electrode.
+        Add a new electrode at the picked 3D position.
         """
-        logger.debug( "_onMiddleButtonRelease()" )
+        logger.debug( f"_onMiddleButtonRelease( {object.GetClassName()}, {event} )" )
 
         clickPosition = self.GetInteractor().GetEventPosition()
 
@@ -1335,10 +1393,16 @@ class MouseInteractorAddElectrode( vtkInteractorStyleTrackballCamera ):
 
 class DSAScene( QObject ):
 
+    """
+    Composes a scene in which a time series of CT/MRI images is compressed into
+    a single image that maps the time
+    """
+
     ############################################################################
 
     def __init__( self, renderWindow, *args, **kwargs ):
         """
+        Initializes the "DSA" scene and its attributes.
         """
         logger.info( f"Creating {__class__.__name__}..." )
 
@@ -1354,7 +1418,8 @@ class DSAScene( QObject ):
 
     def readDataSet( self, fileName = None ):
         """
-        Reads the files pointed to by the fileName. Uses glob.
+        Reads the dataset pointed to by the filename. The filename should be
+        the name of a folder containing a sequence of images.
         """
         # IMPORTANT!: Glob does not sort the images by default.
         self._input = sorted( glob( f"{fileName}/*.png" ) )
@@ -1365,7 +1430,7 @@ class DSAScene( QObject ):
             self._createEmptyRenderer()
             return False
 
-        logger.info( f"Files {fileName} read succesfully!" )
+        logger.info( f"Files {fileName} succesfully read!" )
 
         # Specify the dimensions.
         self._xLen, self._yLen = np.shape( imread( self._input[0] ) )[:2]
@@ -1374,14 +1439,97 @@ class DSAScene( QObject ):
         self.hueMultiplier, self.hueConstant, self.valueMultiplier = 1, 0, 1
 
         # Read in the (inverted) image slices as a volume.
-        for i, file in enumerate( self._input ): self._volume[..., i] = 1 - imread( file )
+        for i, file in enumerate( self._input ):
+            self._volume[..., i] = 1 - imread( file )
 
         return True
 
     ############################################################################
 
+    def calculateRGBImage( self ):
+        """
+        Merge the sequence of greyscale images in the HSV color space, and
+        convert them back to RGB at the end. For every pixel x, y the H, S and
+        V values are calculated as follows (z values represent time):
+
+        -> The H value is calculated by cubing the intensity at index "z"
+           divided by the sum of all intensity values (all "z" at position x, y).
+           This vector is then normalized and a value is assigned by weighting it.
+        -> The S value is set to the maximum (always maximally saturated).
+        -> The V value is calculated by dividing the standard deviation of the
+           z-values at position x,y by the maximum of those standard deviations.
+
+        To tweak the results further, the H value can be adjusted with a
+        multiplier and constant offset. The V value can be adjusted with a
+        multiplier only.
+
+        Operations are done using 3D matrices to speed up te calculations. This
+        method makes extensive use of the numpy module.
+        """
+        logger.debug( f"calculateRGBImage()" )
+
+        # Calculate hue.
+        sumVolume = np.add.reduce( self._volume, axis = 2 )
+        sumVolume[sumVolume == 0] = 1 # Prevent division by zero.
+        sumVolumeX = np.repeat( sumVolume[..., np.newaxis], self._zLen, axis = 2 )
+
+        cubic = np.power( np.divide( self._volume, sumVolumeX ), 3 )
+
+        sumCubic = np.add.reduce( cubic, axis = 2 )
+        sumCubic[sumCubic == 0] = 1 # Prevent division by zero.
+        sumCubicX = np.repeat( sumCubic[..., np.newaxis], self._zLen, axis = 2 )
+
+        linSpace = np.tile( np.linspace( 0.0, 1.0, num = self._zLen ), (self._xLen, self._yLen, 1))
+
+        self._hue = np.add.reduce( np.multiply( linSpace , np.divide( cubic, sumCubicX ) ) , axis = 2 )
+        self._hue = self.hueMultiplier * self._hue - self.hueConstant
+
+        # Calculate saturation.
+        self._sat = np.ones( (self._xLen, self._yLen) )
+
+        # Calculate value.
+        mean = np.add.reduce( self._volume, 2 ) / self._zLen
+        meanX = np.repeat( mean[..., np.newaxis], self._zLen, axis = 2 )
+        stdev = np.sqrt( np.add.reduce( np.square( np.subtract( self._volume, meanX ) ), axis = 2 ) )
+
+        self._val = stdev / np.amax( stdev )
+        self._val = self.valueMultiplier * self._val
+
+        # Clipping is required due to the multipliers/offset.
+        self._hue[ self._hue < 0 ] = 0
+        self._hue[ self._hue > 1 ] = 1
+        self._val[ self._val < 0 ] = 0
+        self._val[ self._val > 1 ] = 1
+
+        self._rgbImage = hsv_to_rgb( np.dstack( (self._hue, self._sat, self._val) ) )
+
+    ############################################################################
+
+    def showRGBImage( self ):
+        """
+        Show the RGB image in the render window.
+        """
+        logger.debug( f"showRGBImage()" )
+
+        self._vtkArr = numpy_to_vtk( np.flip( self._rgbImage.swapaxes( 0, 1 ), axis = 1 ).reshape( (-1, 3), order = "F" ) )
+
+        self._image.SetDimensions( self._yLen, self._xLen, 1 )
+        self._image.GetPointData().SetScalars( self._vtkArr )
+
+        self._scaledImage.SetInputData( self._image )
+        self._scaledImage.SetAxisMagnificationFactor( 0, 0.5 )
+        self._scaledImage.SetAxisMagnificationFactor( 1, 0.5 )
+        self._scaledImage.Update()
+
+        self._imageMapper.SetInputData( self._scaledImage.GetOutput() )
+
+        self._renderWindow.Render()
+
+    ############################################################################
+
     def _initializeScene( self ):
         """
+        Initializes the scene.
         """
         self._image = vtkImageData()
         self._scaledImage = vtkImageResample()
@@ -1401,60 +1549,6 @@ class DSAScene( QObject ):
 
         self._interactor.Initialize()
         self._interactor.Start()
-
-    ############################################################################
-
-    def calculateRGBImage( self ):
-        """
-        """
-        logger.debug( f"calculateRGBImage()" )
-
-        sumVolume = np.add.reduce( self._volume, axis = 2 )
-        sumVolume[sumVolume == 0] = 1
-        sumVolumeX = np.repeat( sumVolume[..., np.newaxis], self._zLen, axis = 2 )
-
-        cubic = np.power( np.divide( self._volume, sumVolumeX ), 3 )
-
-        sumCubic = np.add.reduce( cubic, axis = 2 )
-        sumCubic[sumCubic == 0] = 1
-        sumCubicX = np.repeat( sumCubic[..., np.newaxis], self._zLen, axis = 2 )
-
-        linSpace = np.tile( np.linspace( 0.0, 1.0, num = self._zLen ), (1024, 1024, 1))
-
-        mean = np.add.reduce( self._volume, 2 ) / self._zLen
-        xMinusMu = np.subtract( self._volume, np.repeat( mean[..., np.newaxis], self._zLen, axis = 2 ) )
-        stdev = np.sqrt( np.add.reduce( np.square( xMinusMu ), axis = 2 ) )
-
-        self._hue = np.add.reduce( np.multiply( linSpace , np.divide( cubic, sumCubicX ) ) , axis = 2 )
-        self._sat = np.ones( (self._xLen, self._yLen) )
-        self._val = stdev / np.amax( stdev )
-
-        self._hue = self.hueMultiplier * self._hue - self.hueConstant
-        self._val = self.valueMultiplier * self._val
-
-        self._rgbImage = hsv_to_rgb( np.dstack( (self._hue, self._sat, self._val) ) )
-        self._rgbImage[self._rgbImage > 1] = 1
-
-    ############################################################################
-
-    def showRGBImage( self ):
-        """
-        """
-        logger.debug( f"showRGBImage()" )
-
-        self._vtkArr = numpy_to_vtk( np.flip( self._rgbImage.swapaxes( 0, 1 ), axis = 1 ).reshape( (-1, 3), order = "F" ) )
-
-        self._image.SetDimensions( self._yLen, self._xLen, 1 )
-        self._image.GetPointData().SetScalars( self._vtkArr )
-
-        self._scaledImage.SetInputData( self._image )
-        self._scaledImage.SetAxisMagnificationFactor( 0, 0.5 )
-        self._scaledImage.SetAxisMagnificationFactor( 1, 0.5 )
-        self._scaledImage.Update()
-
-        self._imageMapper.SetInputData( self._scaledImage.GetOutput() )
-
-        self._renderWindow.Render()
 
     ############################################################################
 

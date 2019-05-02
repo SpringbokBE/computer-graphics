@@ -1,3 +1,16 @@
+"""
+File name:  Interactors.py
+Author:     Gerbrand De Laender
+Date:       01/05/2019
+Email:      gerbrand.delaender@ugent.be
+Brief:      E016712, Project, Neuroviz
+About:      Classes that compose widgets that can be used to interact with a
+            scene. For each of the three tasks, a different class exists.
+"""
+
+################################################################################
+################################################################################
+
 from logging import getLogger
 
 from PyQt5.QtCore import Qt
@@ -15,19 +28,23 @@ logger = getLogger( __name__ )
 
 class BasicWidget( QWidget ):
 
+    """
+    Class that composes a widget that can be used to interact with the "Basic
+    Visualization" scene.
+    """
+
     ############################################################################
 
     def __init__( self, dockWidget ,*args, **kwargs ):
         """
-        Creates a widget for the basic visualization scene. Adds it to the
-        provided dock widget.
+        Initialize the widget.
         """
         logger.info( f"Creating {__class__.__name__}..." )
 
+        super().__init__( *args, **kwargs )
+
         self._dockWidget = dockWidget
         self._settings = QApplication.instance().settings
-
-        super().__init__( *args, **kwargs )
 
         self._createLayout()
 
@@ -35,7 +52,7 @@ class BasicWidget( QWidget ):
 
     def activate( self ):
         """
-        Activate the interactor widget.
+        Activate the widget.
         """
         self._dockWidget.setWidget( self )
 
@@ -46,26 +63,24 @@ class BasicWidget( QWidget ):
         Creates the actual layout.
         """
         self._labelInteractionStyle = QLabel( "Interaction style", self )
-
         self.comboBoxInteractionStyle = QComboBox( self )
         self.comboBoxInteractionStyle.addItem( "Opacity" )
         self.comboBoxInteractionStyle.addItem( "Interactive" )
         self.comboBoxInteractionStyle.addItem( "Automatic" )
 
         self._labelActiveContour = QLabel( "Active contour", self )
-
         self.comboBoxActiveContour = QComboBox( self )
 
         self._labelOpacity = QLabel( "Opacity", self )
-
         self.sliderOpacity = QSlider( Qt.Horizontal, self )
-        self.sliderOpacity.setMinimum( 0 )
-        self.sliderOpacity.setMaximum( 99 )
+        self.sliderOpacity.setRange( 0, 99 )
 
         self.sliderGroupCoronal = SliderGroup( "CoronalCut", self )
         self.sliderGroupCoronal.setText( "Coronal cut" )
+
         self.sliderGroupSagittal = SliderGroup( "SagittalCut", self )
         self.sliderGroupSagittal.setText( "Sagittal cut" )
+
         self.sliderGroupTransverse = SliderGroup( "TransverseCut", self )
         self.sliderGroupTransverse.setText( "Transverse cut" )
 
@@ -97,17 +112,23 @@ class BasicWidget( QWidget ):
 
 class EEGWidget( QWidget ):
 
+    """
+    Class that composes a widget that can be used to interact with the "EEG
+    Visualization" scene.
+    """
+
     ############################################################################
 
     def __init__( self, dockWidget, *args, **kwargs ):
         """
+        Initialize the widget.
         """
         logger.info( f"Creating {__class__.__name__}..." )
 
+        super().__init__( *args, **kwargs )
+
         self._dockWidget = dockWidget
         self._settings = QApplication.instance().settings
-
-        super().__init__( *args, **kwargs )
 
         self._createLayout()
 
@@ -115,7 +136,7 @@ class EEGWidget( QWidget ):
 
     def activate( self ):
         """
-        Activate the interactor widget.
+        Activate the widget.
         """
         self._dockWidget.setWidget( self )
 
@@ -123,9 +144,11 @@ class EEGWidget( QWidget ):
 
     def _createLayout( self ):
         """
+        Creates the actual layout.
         """
         self.sliderGroupAnimations = SliderGroup( "Animations", self )
-        self.sliderGroupAnimations.setText( "Update interval" )
+        self.sliderGroupAnimations.setText( "Update interval (ms)" )
+        self.sliderGroupAnimations.setRange( 200, 10_000 )
 
         self._groupBoxAnimations = QGroupBox( "Animations", self )
         self._groupBoxAnimations.setFlat( True )
@@ -147,17 +170,23 @@ class EEGWidget( QWidget ):
 
 class DSAWidget( QWidget ):
 
+    """
+    Class that composes a widget that can be used to interact with the "DSA
+    Visualization" scene.
+    """
+
     ############################################################################
 
     def __init__( self, dockWidget, *args, **kwargs ):
         """
+        Initialize the widget.
         """
         logger.info( f"Creating {__class__.__name__}..." )
 
+        super().__init__( *args, **kwargs )
+
         self._dockWidget = dockWidget
         self._settings = QApplication.instance().settings
-
-        super().__init__( *args, **kwargs )
 
         self._createLayout()
 
@@ -165,7 +194,7 @@ class DSAWidget( QWidget ):
 
     def activate( self ):
         """
-        Activate the interactor widget.
+        Activate the widget.
         """
         self._dockWidget.setWidget( self )
 
@@ -173,6 +202,7 @@ class DSAWidget( QWidget ):
 
     def _createLayout( self ):
         """
+        Create the actual layout.
         """
         self._labelDataSet = QLabel( "Dataset", self )
         self.comboBoxDataSet = QComboBox( self )

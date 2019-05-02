@@ -1,3 +1,16 @@
+"""
+File name:  QVTKRenderWindowInteractor.py
+Author:     Gerbrand De Laender
+Date:       01/05/2019
+Email:      gerbrand.delaender@ugent.be
+Brief:      E016712, Project, Neuroviz
+About:      Class used to display VTK contents in an OpenGL widget. Originally
+            created by Prabhu Ramachandran.
+"""
+
+################################################################################
+################################################################################
+
 from logging import getLogger
 
 from PyQt5.QtCore import QEvent, QObject, QSize, Qt, QTimer
@@ -14,6 +27,12 @@ logger = getLogger( __name__ )
 ################################################################################
 
 class QVTKRenderWindowInteractor( QGLWidget ):
+
+    """
+    QVTKRenderWindowInteractor adapted from
+    vtk/Wrapping/Python/vtkmodules/qt/QVTKRenderWindowInteractor.py,
+    but is derived from a QGLWidget to prevent rendering issues.
+    """
 
     _CURSOR_MAP = {
         0:  Qt.ArrowCursor,
@@ -127,8 +146,6 @@ class QVTKRenderWindowInteractor( QGLWidget ):
         """
         Initialize a custom QVTKRenderWindowInteractor for Python and Qt5.
         Uses a vtkGenericRenderWindowInteractor to handle the interactions.
-        Adapted from vtk/Wrapping/Python/vtkmodules/qt/QVTKRenderWindowInteractor.py,
-        but is derived from a QGLWidget to prevent rendering issues.
         """
         logger.info( f"Creating {__class__.__name__}..." )
 

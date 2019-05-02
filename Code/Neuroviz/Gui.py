@@ -1,3 +1,16 @@
+"""
+File name:  Gui.py
+Author:     Gerbrand De Laender
+Date:       02/05/2019
+Email:      gerbrand.delaender@ugent.be
+Brief:      E016712, Project, Neuroviz
+About:      Class that constitutes the main window to be shown in the Neuroviz
+            application.
+"""
+
+################################################################################
+################################################################################
+
 from distutils.dep_util import newer
 from importlib import import_module
 from logging import getLogger
@@ -21,59 +34,31 @@ class Gui( QMainWindow ):
 
     def __init__( self, *args, **kwargs ):
         """
-        Initialize the Neuroviz GUI.
+        Initialize the GUI.
         """
         logger.info( f"Creating {__class__.__name__}..." )
 
         super().__init__( *args, **kwargs )
 
         self._settings = QApplication.instance().settings
-        self._readSettings()
 
         self._ui = self._recompileUi()
         self._ui.setupUi( self )
 
         self._scenesAndInteractors = [None for _ in range( 3 )]
 
-        self._ui.tabWidget.currentChanged.connect( self._onTabWidgetCurrentChanged )
-
+        # Preloading all scenes will increase startup time, but provides a
+        # allows for rapid tab changes.
         if self._settings.value( f"{__class__.__name__}/Preload", False, type = bool ):
             self._scenesAndInteractors[0] = BasicSceneAndInteractor( self._ui )
             self._scenesAndInteractors[1] = EEGSceneAndInteractor( self._ui )
             self._scenesAndInteractors[2] = DSASceneAndInteractor( self._ui )
 
         # Initialize the scene in the active tab.
+        self._ui.tabWidget.currentChanged.connect( self._onTabWidgetCurrentChanged )
         self._onTabWidgetCurrentChanged( self._ui.tabWidget.currentIndex() )
 
         self.show()
-
-    ############################################################################
-
-    def _readSettings( self ):
-        """
-        Reads the appropriate settings from the QApplication.
-        """
-        self._settings.beginGroup( "GUI" )
-        self._sPyFileName = self._settings.value( "PyFileName", "Ui.py", type = str )
-        self._sPyFileName = normpath( getcwd() + self._sPyFileName )
-        self._sUiFileName = self._settings.value( "UiFileName", "Ui.ui", type = str )
-        self._sUiFileName = normpath( getcwd() + self._sUiFileName )
-        self._sUiClassName = self._settings.value( "UiClassName", "Ui_qmwMain", type = str )
-        self._settings.endGroup()
-
-    ############################################################################
-
-    def _writeSettings( self ):
-        """
-        Writes the appropriate settings to the QApplication.
-        """
-        self._settings.beginGroup( "GUI" )
-        if not self._settings.value( "SaveState", False, type = bool ): return
-        self._settings.setValue( "PyFileName", "/" + relpath( self._sPyFileName, getcwd() ) )
-        self._settings.setValue( "UiFileName", "/" + relpath( self._sUiFileName, getcwd() ) )
-        self._settings.setValue( "UiClassName", self._sUiClassName )
-        self._settings.endGroup()
-        self._settings.sync()
 
     ############################################################################
 
@@ -82,13 +67,21 @@ class Gui( QMainWindow ):
         Generates a new Python file from a UI file created with e.g. Qt Designer
         when necessary. Imports it dynamically as well.
         """
-        if not isfile( self._sPyFileName ) or newer( self._sUiFileName, self._sPyFileName ):
-            logger.info( f"Recompiling {self._sUiFileName} -> {self._sPyFileName}..." )
-            with open( self._sPyFileName, "w+" ) as file:
-                compileUi( self._sUiFileName, file )
+        self._settings.beginGroup( f"{__class__.__name__}" )
+        self._pyFileName = self._settings.value( "PyFileName", "/Neuroviz/Ui.py", type = str )
+        self._pyFileName = normpath( getcwd() + self._sPyFileName )
+        self._uiFileName = self._settings.value( "UiFileName", "/../UI/Neuroviz.ui", type = str )
+        self._uiFileName = normpath( getcwd() + self._sUiFileName )
+        self._uiClassName = self._settings.value( "UiClassName", "Ui_qmwMain", type = str )
+        self._settings.endGroup()
 
-        module = "Neuroviz." + splitext( basename( self._sPyFileName ) )[0]
-        return getattr( import_module( module ), self._sUiClassName )()
+        if not isfile( self._pyFileName ) or newer( self._uiFileName, self._pyFileName ):
+            logger.info( f"Recompiling {self._uiFileName} -> {self._pyFileName}..." )
+            with open( self._pyFileName, "w+" ) as file:
+                compileUi( self._uiFileName, file )
+
+        module = "Neuroviz." + splitext( basename( self._pyFileName ) )[0]
+        return getattr( import_module( module ), self._uiClassName )()
 
     ############################################################################
 
@@ -109,16 +102,6 @@ class Gui( QMainWindow ):
             if not self._scenesAndInteractors[2]:
                 self._scenesAndInteractors[2] = DSASceneAndInteractor( self._ui )
             self._scenesAndInteractors[2].activate()
-
-    ############################################################################
-
-    def closeEvent( self, e ):
-        """
-        Save the settings before closing the window.
-        """
-        logger.debug( f"closeEvent()" )
-
-        self._writeSettings()
 
 ################################################################################
 ################################################################################
