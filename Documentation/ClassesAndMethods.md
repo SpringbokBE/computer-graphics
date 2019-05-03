@@ -8,30 +8,30 @@ Provided is an overview of the different classes that are used in the applicatio
 `[+] setupConsoleLogger( settings )`  
 `[+] setupModulesToLog( settings )`  
 
-## App( QApplication )
+## Neuroviz.App/App( QApplication )
 `[-] __init__( *args, **kwargs )`  
 
-## Gui( QMainWindow )
+## Neuroviz.Gui/Gui( QMainWindow )
 `[-] __init__( *args, **kwargs )`  
 `[-] _recompileUi()`  
 `[-] _onTabWidgetCurrentChanged( index )`  
 
-## BasicWidget( QWidget )
+## Neuroviz.Interactors/BasicWidget( QWidget )
 `[-] __init__( dockWidget ,*args, **kwargs )`  
 `[+] activate()`  
 `[-] _createLayout()`  
 
-## EEGWidget( QWidget )
+## Neuroviz.Interactors/EEGWidget( QWidget )
 `[-] __init__( dockWidget, *args, **kwargs )`  
 `[+] activate()`  
 `[-] _createLayout()`  
 
-## DSAWidget( QWidget )
+## Neuroviz.Interactors/DSAWidget( QWidget )
 `[-] __init__( dockWidget, *args, **kwargs )`  
 `[+] activate()`  
 `[-] _createLayout()`  
 
-## QVTKRenderWindowInteractor( QGLWidget )
+## Neuroviz/QVTKRenderWindowInteractor( QGLWidget )
 `[-] __init__( parent = None, **kwargs )`  
 `[-] __getattr__( attr )`  
 `[+] onDestruction()`  
@@ -60,7 +60,7 @@ Provided is an overview of the different classes that are used in the applicatio
 `[+] GetRenderWindow()`  
 `[+] Render()`  
 
-## BasicSceneAndInteractor( QObject )
+## Neuroviz.ScenesAndInteractors/BasicSceneAndInteractor( QObject )
 `[-] __init__( ui, *args, **kwargs )`  
 `[+] activate()`  
 `[-] _updateInteractorFromScene()`  
@@ -73,7 +73,7 @@ Provided is an overview of the different classes that are used in the applicatio
 `[-] _onSliderOpacityChanged( value )`  
 `[-] _onSliderGroupTimeout()`  
 
-## EEGSceneAndInteractor( QObject )
+## Neuroviz.ScenesAndInteractors/EEGSceneAndInteractor( QObject )
 `[-] __init__( ui, *args, **kwargs )`  
 `[+] activate()`  
 `[-] _updateSceneFromInteractor()`  
@@ -81,7 +81,7 @@ Provided is an overview of the different classes that are used in the applicatio
 `[-] _onSliderGroupAnimationsToggled( state )`  
 `[-] _onSliderGroupAnimationsChanged( value )`  
 
-## DSASceneAndInteractor( QObject )
+## Neuroviz.ScenesAndInteractors/DSASceneAndInteractor( QObject )
 `[-] __init__( ui, *args, **kwargs )`  
 `[+] activate()`  
 `[-] _initializeInteractor()`  
@@ -91,7 +91,7 @@ Provided is an overview of the different classes that are used in the applicatio
 `[-] _onSpinBoxTimeout()`  
 `[-] _onHuePicked( hueMultiplier, hueConstant )`  
 
-## BasicScene( QObject )
+## Neuroviz.Scenes/BasicScene( QObject )
 `[-] __init__( renderWindow, *args, **kwargs )`  
 `[+] initializeScene( fileName = None, interactionStyle = None )`  
 `[+] updateSlices( slices = [None, None, None])`  
@@ -120,7 +120,7 @@ Provided is an overview of the different classes that are used in the applicatio
 `[-] _updateImageResliceActors()`  
 `[-] _onCameraMoved( camera, event )`  
 
-## MouseInteractorToggleOpacity( vtkInteractorStyleTrackballCamera )
+## Neuroviz.Scenes/MouseInteractorToggleOpacity( vtkInteractorStyleTrackballCamera )
 `[-] __init__( renderer, octants, slices, parent = None )`  
 `[+] updateSlices( slices )`  
 `[+] getOpacity()`  
@@ -128,7 +128,7 @@ Provided is an overview of the different classes that are used in the applicatio
 `[-] _onMiddleButtonPress( object, event )`  
 `[-] _onMiddleButtonRelease( object, event )`  
 
-## EEGScene( QObject )
+## Neuroviz.Scenes/EEGScene( QObject )
 `[-] __init__( renderWindow, chartXYWindow, *args, **kwargs )`  
 `[+] initializeScene( fileName = None )`  
 `[+] addElectrode( position )`  
@@ -152,12 +152,12 @@ Provided is an overview of the different classes that are used in the applicatio
 `[-] _clearCharts()`  
 `[-] _onTimeout()`  
 
-## MouseInteractorAddElectrode( vtkInteractorStyleTrackballCamera )
+## Neuroviz.Scenes/MouseInteractorAddElectrode( vtkInteractorStyleTrackballCamera )
 `[-] __init__( renderer, contour, callback, parent = None )`  
 `[-] _onMiddleButtonPress( object, event )`  
 `[-] _onMiddleButtonRelease( object, event )`  
 
-## DSAScene( QObject )
+## Neuroviz.Scenes/DSAScene( QObject )
 `[-] __init__( renderWindow, *args, **kwargs )`  
 `[+] readDataSet( fileName = None )`  
 `[+] setParameters( hueMultiplier = None, hueConstant = None, valueMultiplier = None )`  
@@ -168,16 +168,16 @@ Provided is an overview of the different classes that are used in the applicatio
 `[-] _createEmptyRenderer()`  
 `[-] _pickHue( xPos, yPos )`  
 
-## MouseInteractorPickMinMax( vtkInteractorStyleImage )
+## Neuroviz.Scenes/MouseInteractorPickMinMax( vtkInteractorStyleImage )
 `[-] __init__( renderer, callback, parent = None )`  
 `[-] _onMiddleButtonPress( object, event )`  
 `[-] _onMiddleButtonRelease( object, event )`  
 
-## Ui_qmwMain( object )
+## Neuroviz.Ui/Ui_qmwMain( object )
 `[+] setupUi( qmwMain )`  
 `[+] retranslateUi( qmwMain )`  
 
-## SliderGroup( QWidget )
+## Neuroviz.UiComponents/SliderGroup( QWidget )
 `[-] __init__( name, *args, **kwargs )`  
 `[+] getEnabled( )`  
 `[+] setEnabled( isEnabled )`  
