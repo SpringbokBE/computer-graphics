@@ -1,5 +1,5 @@
 # Neuroviz
-E016712 - Computer Graphics Project - Faculty of Engineering and Architecture, UGent
+E016712 - Computer Graphics, Project - Faculty of Engineering and Architecture, UGent
 
 ## About
 Neuroimaging Visualization Tool using VTK and PyQt.
