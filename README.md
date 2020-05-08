@@ -1,4 +1,4 @@
-# Neuroviz
+# Computer Graphics
 E016712 - Computer Graphics, Project - Faculty of Engineering and Architecture, UGent
 
 ## About
